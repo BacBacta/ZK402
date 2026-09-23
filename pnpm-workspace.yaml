@@ -1,0 +1,12 @@
+packages:
+  - packages/*
+
+onlyBuiltDependencies:
+  - esbuild
+  - keccak
+  - secp256k1
+  - sharp
+
+# Une seule version du SDK dans tout le monorepo (tests Hardhat = front).
+overrides:
+  "@cofhe/sdk": 0.7.1

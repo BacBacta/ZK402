@@ -1,0 +1,21 @@
+{
+  "name": "fhenix402",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Prototype de micropaiements x402 confidentiels (CoFHE / FHE) sur Base Sepolia",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "compile": "pnpm --filter @fhenix402/contracts compile",
+    "test": "pnpm --filter @fhenix402/contracts test",
+    "export-abi": "pnpm --filter @fhenix402/contracts export-abi",
+    "base-sepolia:deploy": "pnpm --filter @fhenix402/contracts base-sepolia:deploy",
+    "base-sepolia:pay": "pnpm --filter @fhenix402/contracts base-sepolia:pay",
+    "dev": "pnpm --filter @fhenix402/web dev",
+    "build": "pnpm --filter @fhenix402/web build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
