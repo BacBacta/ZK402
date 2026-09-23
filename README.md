@@ -159,6 +159,10 @@ Ils ne remplacent pas un essai réel sur Base Sepolia.
 La conception détaillée de la v2 (pool blindé ZK, accès anonyme, relayer) est dans
 [`docs/conception-v2.md`](docs/conception-v2.md).
 
+Son application au cas d'usage où la demande est la plus forte — paie et paiements confidentiels
+en USDC pour les entreprises crypto-natives — est détaillée dans
+[`docs/conception-paie.md`](docs/conception-paie.md).
+
 
 - Remplacer les crédits de démo par un FHERC20 (ou USDC wrappé) et des opérateurs à courte échéance.
 - Relais de gas / paymaster pour éviter que le payeur expose son wallet de gas.
