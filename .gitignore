@@ -1,0 +1,18 @@
+node_modules/
+.env
+.env.local
+.DS_Store
+
+# contracts
+packages/contracts/artifacts/
+packages/contracts/cache/
+packages/contracts/typechain-types/
+packages/contracts/coverage/
+packages/contracts/coverage.json
+packages/contracts/deployments/localcofhe.json
+packages/contracts/deployments/hardhat.json
+
+# web
+packages/web/.next/
+packages/web/next-env.d.ts
+packages/web/*.tsbuildinfo
