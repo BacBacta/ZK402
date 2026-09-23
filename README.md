@@ -156,6 +156,10 @@ Ils ne remplacent pas un essai réel sur Base Sepolia.
 
 ## Pistes v2
 
+La conception détaillée de la v2 (pool blindé ZK, accès anonyme, relayer) est dans
+[`docs/conception-v2.md`](docs/conception-v2.md).
+
+
 - Remplacer les crédits de démo par un FHERC20 (ou USDC wrappé) et des opérateurs à courte échéance.
 - Relais de gas / paymaster pour éviter que le payeur expose son wallet de gas.
 - Plusieurs ressources par contrat sans identifiant public (ex. identifiant chiffré).
