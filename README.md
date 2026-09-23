@@ -163,6 +163,9 @@ Son application au cas d'usage où la demande est la plus forte — paie et paie
 en USDC pour les entreprises crypto-natives — est détaillée dans
 [`docs/conception-paie.md`](docs/conception-paie.md).
 
+La cartographie des opportunités ZK et FHE sur Base (demande, concurrence, priorisation) est dans
+[`docs/opportunites-zk-fhe-base.md`](docs/opportunites-zk-fhe-base.md).
+
 
 - Remplacer les crédits de démo par un FHERC20 (ou USDC wrappé) et des opérateurs à courte échéance.
 - Relais de gas / paymaster pour éviter que le payeur expose son wallet de gas.

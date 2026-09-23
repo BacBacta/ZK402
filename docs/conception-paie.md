@@ -6,7 +6,8 @@
 > **Pourquoi ce produit** : la confidentialité est citée comme le premier obstacle à l'adoption des
 > stablecoins par les entreprises (Fireblocks, avril 2026), et la paie en stablecoins progresse
 > vite. Base Ledgers (Coinbase, juin 2026) sert les grandes entreprises via un opérateur qui détient
-> la custody. Ce document vise le créneau laissé libre : **entreprises crypto-natives, DAOs,
+> la custody. Zama × Bron ont aussi versé une paie confidentielle en cUSDT (ERC-7984, FHE) dès
+> janvier 2026 : montants cachés, adresses visibles. Ce document vise le créneau laissé libre : **entreprises crypto-natives, DAOs,
 > startups, plateformes de freelances** qui veulent une solution **non-custodiale, en libre-service,
 > auditable**.
 >
