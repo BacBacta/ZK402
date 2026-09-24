@@ -138,4 +138,82 @@ contract AllocationModelTest {
         }
         assert(fb == fs);
     }
+
+    // ------------------------------------------------------------------------------------------
+    // Preuve par lemmes de la conservation de QUOTE (la preuve directe sur 3 ordres dépasse le
+    // temps du solveur à cause des multiplications 64 bits). Chaque lemme porte sur UN ordre
+    // (fonction fillOne du modèle) avec des entrées symboliques quelconques respectant les
+    // pré-conditions établies par la phase 1 (lemme L5).
+    //
+    // Conclusion (arithmétique) : ΣQUOTE' = ΣQUOTE − p·Σfb + p·Σfs, car aucune opération ne
+    // reboucle (L2, L3, L4) ; or Σfb = Σfs (check_fixed_buyEqualsSell, prouvé) ⇒ ΣQUOTE' = ΣQUOTE.
+    // ------------------------------------------------------------------------------------------
+
+    /// L2 : le coût d'une exécution ne reboucle jamais.
+    function check_lemma_costExact(uint64 fill, uint64 price) public pure {
+        require(fill <= MAX_QTY && price > 0 && price <= MAX_PRICE);
+        uint64 cost;
+        unchecked {
+            cost = fill * price;
+        }
+        assert(uint256(cost) == uint256(fill) * uint256(price));
+    }
+
+    /// L3 : acheteur couvert : QUOTE baisse exactement de fill·p (jamais sous zéro), BASE monte de fill.
+    function check_lemma_buyerExact(uint64 base0, uint64 quote0, uint64 e, uint64 remBuy, uint64 remSell, uint64 price)
+        public
+        pure
+    {
+        require(price > 0 && price <= MAX_PRICE && e <= MAX_QTY);
+        require(uint256(quote0) >= uint256(e) * price); // couverture (L5)
+        require(uint256(base0) + e < (uint256(1) << 64)); // offre BASE bornée
+        uint64[] memory b = new uint64[](1);
+        uint64[] memory q = new uint64[](1);
+        b[0] = base0;
+        q[0] = quote0;
+        uint64[2] memory rem = [remBuy, remSell];
+        uint64 fill = AllocationModel.fillOne(b, q, AllocationModel.Order(0, true, e), e, rem, price);
+        assert(fill <= e);
+        assert(uint256(q[0]) == uint256(quote0) - uint256(fill) * price);
+        assert(uint256(b[0]) == uint256(base0) + fill);
+        assert(rem[1] == remSell && uint256(rem[0]) + fill == uint256(remBuy));
+    }
+
+    /// L4 : vendeur couvert : BASE baisse de fill (jamais sous zéro), QUOTE monte exactement de fill·p.
+    function check_lemma_sellerExact(uint64 base0, uint64 quote0, uint64 e, uint64 remBuy, uint64 remSell, uint64 price)
+        public
+        pure
+    {
+        require(price > 0 && price <= MAX_PRICE && e <= MAX_QTY);
+        require(base0 >= e); // couverture (L5)
+        require(uint256(quote0) + uint256(e) * price < (uint256(1) << 64)); // offre QUOTE bornée
+        uint64[] memory b = new uint64[](1);
+        uint64[] memory q = new uint64[](1);
+        b[0] = base0;
+        q[0] = quote0;
+        uint64[2] memory rem = [remBuy, remSell];
+        uint64 fill = AllocationModel.fillOne(b, q, AllocationModel.Order(0, false, e), e, rem, price);
+        assert(fill <= e);
+        assert(uint256(b[0]) == uint256(base0) - fill);
+        assert(uint256(q[0]) == uint256(quote0) + uint256(fill) * price);
+        assert(rem[0] == remBuy && uint256(rem[1]) + fill == uint256(remSell));
+    }
+
+    /// L5 : phase 1 : un ordre retenu est EXACTEMENT couvert (pas de faux positif par rebouclage
+    ///      de q·p) et eff ∈ {0, qty}.
+    function check_lemma_coverageExact(uint64 base0, uint64 quote0, bool isBuy, uint64 qty, uint64 price) public pure {
+        require(price > 0 && price <= MAX_PRICE);
+        uint64 need;
+        unchecked {
+            need = qty * price;
+        }
+        bool ok = (isBuy ? quote0 >= need : base0 >= qty) && qty <= MAX_QTY;
+        uint64 e = ok ? qty : 0;
+        if (e > 0) {
+            if (isBuy) assert(uint256(quote0) >= uint256(e) * price);
+            else assert(base0 >= e);
+            assert(e <= MAX_QTY);
+        }
+        assert(e == 0 || e == qty);
+    }
 }
