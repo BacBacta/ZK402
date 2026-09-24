@@ -169,6 +169,8 @@ La cartographie des opportunités ZK et FHE sur Base (demande, concurrence, prio
 L'étage 1 recommandé — identifiants ZK anonymes adossés à Coinbase Verifications — est détaillé dans
 [`docs/conception-identifiants-zk.md`](docs/conception-identifiants-zk.md).
 
+Les mesures de phase 0 sur données publiques (marchés Limitless, jobs ACP de Virtuals) sont dans
+[`docs/phase0-resultats.md`](docs/phase0-resultats.md).
 
 - Remplacer les crédits de démo par un FHERC20 (ou USDC wrappé) et des opérateurs à courte échéance.
 - Relais de gas / paymaster pour éviter que le payeur expose son wallet de gas.
