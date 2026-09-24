@@ -6,12 +6,18 @@ import { expect } from "chai";
 const TASK_COFHE_MOCKS_DEPLOY = "task:cofhe-mocks:deploy";
 const PYTH_ID = "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace";
 const DURATION = 3600n;
-const STALENESS = 300n;
+const CL_MAX_AGE = 3600n;
+const API3_MAX_AGE = 93_600n; // 26 h : heartbeat API3 de 24 h + marge
+const PY_MAX_AGE = 300n;
+const PY_WINDOW = 60n;
 const DEV_BPS = 100n; // 1 %
 const CONF_BPS = 50n; // 0,5 %
 const DIVISOR = 1_000_000_000n; // 8 décimales USD/ETH → centimes par milli-ETH
 const CL_PRICE = 2688n * 10n ** 8n;
 const PY_PRICE = 2690n * 10n ** 8n;
+const A3_PRICE = 2689n * 10n ** 18n; // API3 : 18 décimales
+const MEDIAN8 = 2689n * 10n ** 8n;
+const POOL_PRICE = MEDIAN8 / DIVISOR;
 const FB = 1_000n;
 const FQ = 5_000_000n;
 const ABI = hre.ethers.AbiCoder.defaultAbiCoder();
@@ -19,22 +25,26 @@ const ABI = hre.ethers.AbiCoder.defaultAbiCoder();
 async function deployFixture() {
   await hre.run(TASK_COFHE_MOCKS_DEPLOY);
   const signers = await hre.ethers.getSigners();
-  const cl = await (await hre.ethers.getContractFactory("MockAggregatorV3")).deploy(8, CL_PRICE);
+  const Agg = await hre.ethers.getContractFactory("MockAggregatorV3");
+  const cl = await Agg.deploy(8, CL_PRICE, true);
+  const a3 = await Agg.deploy(18, A3_PRICE, false);
   const py = await (await hre.ethers.getContractFactory("MockPyth")).deploy();
-  const now = BigInt(await time.latest());
-  await py.set(PY_PRICE, PY_PRICE / 1000n, -8, now);
+  await py.setStored(PY_PRICE, PY_PRICE / 1000n, -8, BigInt(await time.latest()));
+  const cfg = {
+    chainlinkFeed: await cl.getAddress(),
+    api3Feed: await a3.getAddress(),
+    pyth: await py.getAddress(),
+    pythPriceId: PYTH_ID,
+    chainlinkMaxAge: CL_MAX_AGE,
+    api3MaxAge: API3_MAX_AGE,
+    pythMaxAge: PY_MAX_AGE,
+    pythWindow: PY_WINDOW,
+    maxDeviationBps: DEV_BPS,
+    maxConfBps: CONF_BPS,
+  };
   const f = await hre.ethers.getContractFactory("SealedBatchPoolV2");
-  const pool = await f.deploy(
-    await cl.getAddress(),
-    await py.getAddress(),
-    PYTH_ID,
-    STALENESS,
-    DEV_BPS,
-    CONF_BPS,
-    DIVISOR,
-    DURATION,
-  );
-  return { pool, poolAddress: await pool.getAddress(), cl, py, signers };
+  const pool = await f.deploy(cfg, DIVISOR, DURATION);
+  return { pool, poolAddress: await pool.getAddress(), cl, a3, py, signers, cfg };
 }
 
 async function submit(pool: any, poolAddress: string, signer: any, isBuy: boolean, qty: bigint) {
@@ -44,16 +54,34 @@ async function submit(pool: any, poolAddress: string, signer: any, isBuy: boolea
   return pool.connect(signer).submitOrder(side, proofSide, amount, proofQty);
 }
 
-async function refreshOracles(cl: any, py: any, clPrice = CL_PRICE, pyPrice = PY_PRICE) {
+/** Publie des prix frais sur les trois sources, juste AVANT la clôture du lot courant
+ *  (observations ≤ t_k et d'âge ≤ maxAge à t_k). */
+async function refreshOracles(o: any, cl = CL_PRICE, py = PY_PRICE, a3 = A3_PRICE) {
+  const deadline = await o.pool.batchDeadline(await o.pool.currentBatch());
+  if (BigInt(await time.latest()) < deadline - 20n) await time.increaseTo(deadline - 20n);
   const now = BigInt(await time.latest());
-  await cl.set(clPrice, now);
-  await py.set(pyPrice, pyPrice / 1000n, -8, now);
+  await o.cl.push(cl, now);
+  await o.a3.push(a3, now);
+  await o.py.setStored(py, py / 1000n, -8, now);
 }
 
 async function closeBatch(pool: any, k: bigint) {
   const deadline = await pool.batchDeadline(k);
   const now = BigInt(await time.latest());
   if (now < deadline) await time.increaseTo(deadline);
+}
+
+/** Indice Chainlink correct : dernier round avec updatedAt ≤ t_k. */
+async function hintFor(pool: any, cl: any) {
+  const t = await pool.batchDeadline(await pool.nextToSettle());
+  let id = await cl.latest();
+  while (id > 1n && (await cl.rounds(id)).updatedAt > t) id--;
+  return id;
+}
+
+async function start(pool: any, o: any, by?: any, pythUpdate: string[] = [], value = 0n) {
+  const hint = await hintFor(pool, o.cl);
+  return (by ? pool.connect(by) : pool).startSettlement(hint, pythUpdate, { value });
 }
 
 async function settleAll(pool: any, by: any, step = 64) {
@@ -64,7 +92,15 @@ async function settleAll(pool: any, by: any, step = 64) {
   }
 }
 
-describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle d'oracle)", function () {
+async function oneOrderClosed() {
+  const o = await loadFixture(deployFixture);
+  const a = o.signers[1];
+  await o.pool.connect(a).claimFaucet();
+  await submit(o.pool, o.poolAddress, a, true, 1n);
+  return o;
+}
+
+describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle 2 sur 3 à l'instant de clôture)", function () {
   it("n'expose aucune fonction privilégiée (pas d'owner, operator, pause, upgrade)", async function () {
     const f = await hre.ethers.getContractFactory("SealedBatchPoolV2");
     const names = f.interface.fragments.filter((x: any) => x.type === "function").map((x: any) => x.name);
@@ -74,110 +110,168 @@ describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle d'oracle)"
   });
 
   it("refuse de régler un lot avant son échéance", async function () {
-    const { pool, poolAddress, signers } = await loadFixture(deployFixture);
-    const a = signers[1];
-    await pool.connect(a).claimFaucet();
-    await submit(pool, poolAddress, a, true, 1n);
-    await expect(pool.connect(signers[9]).startSettlement([])).to.be.revertedWithCustomError(pool, "BatchNotClosed");
+    const o = await oneOrderClosed();
+    await expect(start(o.pool, o, o.signers[9])).to.be.revertedWithCustomError(o.pool, "BatchNotClosed");
   });
 
-  it("n'importe quel compte règle le lot, au prix moyen des deux oracles", async function () {
-    const { pool, poolAddress, cl, py, signers } = await loadFixture(deployFixture);
-    const [a, b, stranger] = [signers[1], signers[2], signers[15]];
-    await pool.connect(a).claimFaucet();
-    await pool.connect(b).claimFaucet();
-    await submit(pool, poolAddress, a, true, 10n);
-    await submit(pool, poolAddress, b, false, 10n);
-    await closeBatch(pool, 0n);
-    await refreshOracles(cl, py);
-    await expect(pool.connect(stranger).startSettlement([]))
-      .to.emit(pool, "SettlementStarted")
-      .withArgs(0n, (CL_PRICE + PY_PRICE) / 2n / DIVISOR, 2n, CL_PRICE, PY_PRICE);
-    await settleAll(pool, stranger);
-    const p = (CL_PRICE + PY_PRICE) / 2n / DIVISOR;
-    await hre.cofhe.mocks.expectPlaintext(await pool.baseBalanceOf(a.address), FB + 10n);
-    await hre.cofhe.mocks.expectPlaintext(await pool.quoteBalanceOf(a.address), FQ - 10n * p);
-    await hre.cofhe.mocks.expectPlaintext(await pool.baseBalanceOf(b.address), FB - 10n);
-    await hre.cofhe.mocks.expectPlaintext(await pool.quoteBalanceOf(b.address), FQ + 10n * p);
-    expect(await pool.nextToSettle()).to.equal(1n);
+  it("n'importe quel compte règle le lot, au prix médian des trois sources", async function () {
+    const o = await loadFixture(deployFixture);
+    const [a, b, stranger] = [o.signers[1], o.signers[2], o.signers[15]];
+    await o.pool.connect(a).claimFaucet();
+    await o.pool.connect(b).claimFaucet();
+    await submit(o.pool, o.poolAddress, a, true, 10n);
+    await submit(o.pool, o.poolAddress, b, false, 10n);
+    await refreshOracles(o);
+    await closeBatch(o.pool, 0n);
+    await expect(start(o.pool, o, stranger))
+      .to.emit(o.pool, "SettlementStarted")
+      .withArgs(0n, POOL_PRICE, 2n, CL_PRICE, PY_PRICE, MEDIAN8);
+    await settleAll(o.pool, stranger);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(a.address), FB + 10n);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(a.address), FQ - 10n * POOL_PRICE);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(b.address), FB - 10n);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(b.address), FQ + 10n * POOL_PRICE);
   });
 
-  const postponeCases: [string, (cl: any, py: any) => Promise<void>, number][] = [
-    ["Chainlink périmé", async (cl, py) => { await refreshOracles(cl, py); await cl.set(CL_PRICE, BigInt(await time.latest()) - STALENESS - 10n); }, 2],
-    ["Chainlink négatif", async (cl, py) => { await refreshOracles(cl, py, -1n); }, 1],
-    ["Chainlink round incomplet", async (cl, py) => { await refreshOracles(cl, py); await cl.setAnsweredInRound(0); }, 1],
-    ["Pyth périmé", async (cl, py) => { await refreshOracles(cl, py); await py.set(PY_PRICE, 1n, -8, BigInt(await time.latest()) - STALENESS - 10n); }, 3],
-    ["Pyth confiance trop large", async (cl, py) => { await refreshOracles(cl, py); await py.set(PY_PRICE, PY_PRICE / 10n, -8, BigInt(await time.latest())); }, 4],
-    ["écart > 1 % entre oracles", async (cl, py) => { await refreshOracles(cl, py, CL_PRICE, (CL_PRICE * 102n) / 100n); }, 5],
+  it("R5 : le prix est celui de la clôture, pas celui du déclenchement", async function () {
+    const o = await oneOrderClosed();
+    await o.pool.connect(o.signers[2]).claimFaucet();
+    await submit(o.pool, o.poolAddress, o.signers[2], false, 1n);
+    await refreshOracles(o);
+    await closeBatch(o.pool, 0n);
+    // Après la clôture, les oracles bougent de +50 % : le déclencheur ne doit pas en profiter.
+    await time.increase(30);
+    const later = BigInt(await time.latest());
+    await o.cl.push(CL_PRICE * 3n / 2n, later);
+    await o.a3.push(A3_PRICE * 3n / 2n, later);
+    await o.py.setStored(PY_PRICE * 3n / 2n, 1n, -8, later);
+    // L'indice honnête désigne le round d'avant la clôture ; le round postérieur est refusé.
+    await expect(o.pool.startSettlement(await o.cl.latest(), [])).to.be.revertedWithCustomError(o.pool, "BadChainlinkHint");
+    // API3 et Pyth ont été mis à jour après t_k : leur valeur « à t_k » est inconnue → invalides.
+    // Il ne reste que Chainlink : < 2 sources → report (jamais le prix post-clôture).
+    await expect(start(o.pool, o)).to.emit(o.pool, "BatchPostponed").withArgs(0n, 1);
+  });
+
+  it("R5 : un indice Chainlink trop ancien (round suivant ≤ t_k) est refusé", async function () {
+    const o = await oneOrderClosed();
+    await refreshOracles(o);
+    await refreshOracles(o); // deux rounds avant la clôture
+    await closeBatch(o.pool, 0n);
+    const latest = await o.cl.latest();
+    await expect(o.pool.startSettlement(latest - 1n, [])).to.be.revertedWithCustomError(o.pool, "BadChainlinkHint");
+    await expect(o.pool.startSettlement(latest, [])).to.emit(o.pool, "SettlementStarted");
+  });
+
+  it("2 sur 3 : une source aberrante est écartée par la médiane", async function () {
+    const o = await oneOrderClosed();
+    await refreshOracles(o, CL_PRICE, PY_PRICE * 10n, A3_PRICE); // Pyth ×10
+    await closeBatch(o.pool, 0n);
+    await expect(start(o.pool, o)).to.emit(o.pool, "SettlementStarted").withArgs(0n, POOL_PRICE, 1n, CL_PRICE, PY_PRICE * 10n, MEDIAN8);
+  });
+
+  it("2 sur 3 : fonctionne avec deux sources si la troisième est indisponible", async function () {
+    const o = await oneOrderClosed();
+    await refreshOracles(o);
+    await o.py.setStored(PY_PRICE, 1n, -8, 1n); // Pyth périmé
+    await closeBatch(o.pool, 0n);
+    await expect(start(o.pool, o)).to.emit(o.pool, "SettlementStarted");
+    expect(await o.pool.settlementPrice()).to.equal((CL_PRICE + MEDIAN8) / 2n / DIVISOR);
+  });
+
+  const postponeCases: [string, (o: any) => Promise<void>, number][] = [
+    ["deux sources périmées", async (o) => { await refreshOracles(o); await o.py.setStored(PY_PRICE, 1n, -8, 1n); await o.a3.push(A3_PRICE, 1n); }, 1],
+    ["Chainlink négatif et Pyth périmé", async (o) => { await refreshOracles(o, -1n); await o.py.setStored(PY_PRICE, 1n, -8, 1n); }, 1],
+    ["Chainlink round incomplet et API3 périmé", async (o) => { await refreshOracles(o); await o.cl.setAnsweredOverride(1n); await o.a3.push(A3_PRICE, 1n); }, 1],
+    ["Pyth confiance trop large et API3 absent", async (o) => { await refreshOracles(o); await o.py.setStored(PY_PRICE, PY_PRICE / 10n, -8, BigInt(await time.latest())); await o.a3.push(0n, BigInt(await time.latest())); }, 1],
+    ["trois sources mutuellement en désaccord (> 1 %)", async (o) => { await refreshOracles(o, CL_PRICE, CL_PRICE * 103n / 100n, A3_PRICE * 106n / 100n); }, 2],
+    ["deux sources seulement, en désaccord", async (o) => { await refreshOracles(o, CL_PRICE, CL_PRICE * 103n / 100n); await o.a3.push(A3_PRICE, 1n); }, 2],
   ];
   for (const [label, setup, reason] of postponeCases) {
     it(`reporte le lot (jamais réglé à un mauvais prix) : ${label}`, async function () {
-      const { pool, poolAddress, cl, py, signers } = await loadFixture(deployFixture);
-      const a = signers[1];
-      await pool.connect(a).claimFaucet();
-      await submit(pool, poolAddress, a, true, 1n);
-      await closeBatch(pool, 0n);
-      await setup(cl, py);
-      await expect(pool.startSettlement([])).to.emit(pool, "BatchPostponed").withArgs(0n, reason);
-      expect(await pool.phase()).to.equal(0n);
-      expect(await pool.nextToSettle()).to.equal(0n);
-      // Dès que les oracles redeviennent valides, n'importe qui peut régler.
-      await refreshOracles(cl, py);
-      await expect(pool.connect(signers[7]).startSettlement([])).to.emit(pool, "SettlementStarted");
+      const o = await oneOrderClosed();
+      await setup(o);
+      await closeBatch(o.pool, 0n);
+      await expect(start(o.pool, o)).to.emit(o.pool, "BatchPostponed").withArgs(0n, reason);
+      expect(await o.pool.phase()).to.equal(0n);
+      expect(await o.pool.nextToSettle()).to.equal(0n);
     });
   }
 
-  it("accepte une mise à jour Pyth poussée par le déclencheur et rembourse l'excédent", async function () {
-    const { pool, poolAddress, cl, py, signers } = await loadFixture(deployFixture);
-    const a = signers[1];
-    await pool.connect(a).claimFaucet();
-    await submit(pool, poolAddress, a, true, 1n);
-    await closeBatch(pool, 0n);
-    await cl.set(CL_PRICE, BigInt(await time.latest()));
-    await py.set(PY_PRICE, 1n, -8, 1n); // Pyth périmé…
-    const upd = ABI.encode(["int64", "uint64", "int32"], [PY_PRICE, PY_PRICE / 1000n, -8]);
-    const trigger = signers[8];
-    const before = await hre.ethers.provider.getBalance(trigger.address);
-    const tx = await pool.connect(trigger).startSettlement([upd], { value: 1000n });
-    const r = await tx.wait();
-    await expect(tx).to.emit(pool, "SettlementStarted");
-    const after = await hre.ethers.provider.getBalance(trigger.address);
-    expect(before - after - r!.gasUsed * r!.gasPrice).to.equal(1n); // frais Pyth = 1 wei
+  it("Pyth : la première mise à jour signée dans [t_k, t_k + fenêtre] est utilisée ; excédent remboursé", async function () {
+    const o = await oneOrderClosed();
+    await refreshOracles(o);
+    await o.a3.push(A3_PRICE, 1n); // API3 hors jeu : Chainlink + Pyth poussé doivent suffire
+    await closeBatch(o.pool, 0n);
+    const t = await o.pool.batchDeadline(0n);
+    const upd = ABI.encode(["int64", "uint64", "int32", "uint64", "uint64"], [PY_PRICE, PY_PRICE / 1000n, -8, t + 5n, t - 1n]);
+    const trigger = o.signers[8];
+    const before: bigint = await hre.ethers.provider.getBalance(trigger.address);
+    const tx = await start(o.pool, o, trigger, [upd], 1000n);
+    const r: any = await tx.wait();
+    await expect(tx).to.emit(o.pool, "SettlementStarted").withArgs(0n, (CL_PRICE + PY_PRICE) / 2n / DIVISOR, 1n, CL_PRICE, PY_PRICE, 0n);
+    const after: bigint = await hre.ethers.provider.getBalance(trigger.address);
+    expect(before - after - BigInt(r.gasUsed) * BigInt(r.gasPrice)).to.equal(1n); // frais Pyth = 1 wei
+  });
+
+  it("Pyth : une mise à jour hors fenêtre est ignorée (pas de choix a posteriori)", async function () {
+    const o = await oneOrderClosed();
+    await refreshOracles(o);
+    await o.a3.push(A3_PRICE, 1n);
+    await o.py.setStored(PY_PRICE, 1n, -8, 1n);
+    await closeBatch(o.pool, 0n);
+    const t = await o.pool.batchDeadline(0n);
+    const late = ABI.encode(["int64", "uint64", "int32", "uint64", "uint64"], [PY_PRICE, 1n, -8, t + PY_WINDOW + 1n, t + 10n]);
+    await expect(start(o.pool, o, undefined, [late], 10n)).to.emit(o.pool, "BatchPostponed").withArgs(0n, 1);
   });
 
   it("passe un lot vide sans oracle et règle les lots strictement dans l'ordre", async function () {
-    const { pool, poolAddress, cl, py, signers } = await loadFixture(deployFixture);
-    const a = signers[1];
-    await pool.connect(a).claimFaucet();
-    await closeBatch(pool, 0n); // lot 0 vide
-    await submit(pool, poolAddress, a, true, 1n); // va dans le lot 1
-    expect(await pool.orderCount(1n)).to.equal(1n);
-    await expect(pool.startSettlement([])).to.emit(pool, "BatchSkippedEmpty").withArgs(0n);
-    await expect(pool.startSettlement([])).to.be.revertedWithCustomError(pool, "BatchNotClosed");
-    await closeBatch(pool, 1n);
-    await refreshOracles(cl, py);
-    await expect(pool.startSettlement([])).to.emit(pool, "SettlementStarted");
+    const o = await loadFixture(deployFixture);
+    const a = o.signers[1];
+    await o.pool.connect(a).claimFaucet();
+    await closeBatch(o.pool, 0n); // lot 0 vide
+    await submit(o.pool, o.poolAddress, a, true, 1n); // lot 1
+    expect(await o.pool.orderCount(1n)).to.equal(1n);
+    await expect(o.pool.startSettlement(0, [])).to.emit(o.pool, "BatchSkippedEmpty").withArgs(0n);
+    await expect(o.pool.startSettlement(0, [])).to.be.revertedWithCustomError(o.pool, "BatchNotClosed");
+    await refreshOracles(o);
+    await closeBatch(o.pool, 1n);
+    await expect(start(o.pool, o)).to.emit(o.pool, "SettlementStarted");
   });
 
   it("un ordre par trader et par lot ; nouvel ordre autorisé au lot suivant", async function () {
-    const { pool, poolAddress, signers } = await loadFixture(deployFixture);
-    const a = signers[1];
-    await pool.connect(a).claimFaucet();
-    await submit(pool, poolAddress, a, true, 1n);
-    await expect(submit(pool, poolAddress, a, true, 1n)).to.be.revertedWithCustomError(pool, "AlreadySubmitted");
-    await closeBatch(pool, 0n);
-    await submit(pool, poolAddress, a, false, 1n);
-    expect(await pool.orderCount(1n)).to.equal(1n);
+    const o = await oneOrderClosed();
+    const a = o.signers[1];
+    await expect(submit(o.pool, o.poolAddress, a, true, 1n)).to.be.revertedWithCustomError(o.pool, "AlreadySubmitted");
+    await closeBatch(o.pool, 0n);
+    await submit(o.pool, o.poolAddress, a, false, 1n);
+    expect(await o.pool.orderCount(1n)).to.equal(1n);
+  });
+
+  it("attaque par rebouclage de q·prix (trouvée par Halmos) : l'ordre n'est pas exécuté", async function () {
+    const o = await loadFixture(deployFixture);
+    const [attacker, seller] = [o.signers[1], o.signers[2]];
+    await o.pool.connect(attacker).claimFaucet();
+    await o.pool.connect(seller).claimFaucet();
+    // q tel que q·prix ≡ petit (mod 2^64) : sans borne, le contrôle de couverture passe.
+    const q = (1n << 64n) / POOL_PRICE + 1n;
+    expect((q * POOL_PRICE) % (1n << 64n) < FQ).to.equal(true); // coût rebouclé < solde QUOTE
+    await submit(o.pool, o.poolAddress, attacker, true, q);
+    await submit(o.pool, o.poolAddress, seller, false, 500n);
+    await refreshOracles(o);
+    await closeBatch(o.pool, 0n);
+    await start(o.pool, o);
+    await settleAll(o.pool, o.signers[3]);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.lastFillOf(attacker.address), 0n);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(seller.address), FB);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(attacker.address), FQ);
   });
 
   it("rejette des paramètres de construction dangereux", async function () {
-    const { cl, py } = await loadFixture(deployFixture);
+    const o = await loadFixture(deployFixture);
     const f = await hre.ethers.getContractFactory("SealedBatchPoolV2");
-    const c = await cl.getAddress();
-    const p = await py.getAddress();
-    await expect(f.deploy(c, p, PYTH_ID, STALENESS, 1_001n, CONF_BPS, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
-    await expect(f.deploy(hre.ethers.ZeroAddress, p, PYTH_ID, STALENESS, DEV_BPS, CONF_BPS, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
-    await expect(f.deploy(c, p, PYTH_ID, 0n, DEV_BPS, CONF_BPS, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
+    await expect(f.deploy({ ...o.cfg, maxDeviationBps: 1_001n }, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
+    await expect(f.deploy({ ...o.cfg, api3Feed: hre.ethers.ZeroAddress }, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
+    await expect(f.deploy({ ...o.cfg, pythWindow: 0n }, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
   });
 });
 
@@ -230,7 +324,8 @@ describe("SealedBatchPoolV2 — propriétés (lots aléatoires vs modèle de ré
   for (let run = 0; run < RUNS; run++) {
     const seed = 1000 + run;
     it(`scénario aléatoire n° ${run + 1} (graine ${seed}) : conservation et conformité au modèle`, async function () {
-      const { pool, poolAddress, cl, py, signers } = await loadFixture(deployFixture);
+      const o = await loadFixture(deployFixture);
+      const { pool, poolAddress, signers } = o;
       const r = rng(seed);
       const nTraders = 2 + Math.floor(r() * 7); // 2..8
       const traders = signers.slice(1, 1 + nTraders);
@@ -240,7 +335,7 @@ describe("SealedBatchPoolV2 — propriétés (lots aléatoires vs modèle de ré
         for (let c = 0; c < claims; c++) await pool.connect(t).claimFaucet();
         accs.push({ base: FB * BigInt(claims), quote: FQ * BigInt(claims) });
       }
-      const p = (CL_PRICE + PY_PRICE) / 2n / DIVISOR;
+      const p = POOL_PRICE;
       const totalBase0 = accs.reduce((s, a) => s + a.base, 0n);
       const totalQuote0 = accs.reduce((s, a) => s + a.quote, 0n);
 
@@ -256,15 +351,15 @@ describe("SealedBatchPoolV2 — propriétés (lots aléatoires vs modèle de ré
         const batch = await pool.currentBatch();
         for (const o of orders) await submit(pool, poolAddress, traders[o.t], o.buy, o.q);
         expect(await pool.orderCount(batch), "tous les ordres doivent être dans le même lot").to.equal(BigInt(orders.length));
+        await refreshOracles(o);
         await closeBatch(pool, batch);
-        await refreshOracles(cl, py);
         // lots vides éventuels avant le nôtre
-        while ((await pool.nextToSettle()) < batch) await pool.startSettlement([]);
+        while ((await pool.nextToSettle()) < batch) await pool.startSettlement(0, []);
         if (orders.length === 0) {
-          await pool.startSettlement([]);
+          await pool.startSettlement(0, []);
           continue;
         }
-        await pool.connect(signers[19]).startSettlement([]);
+        await start(pool, o, signers[19]);
         await settleAll(pool, signers[18], 1 + Math.floor(r() * 4));
         const fills = referenceBatch(accs, orders, p);
         for (let i = 0; i < orders.length; i++) {

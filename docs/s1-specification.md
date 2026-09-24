@@ -81,7 +81,9 @@ fonction restreinte (P7.3). Tout appelant peut enchaîner `startSettlement` puis
 (P7.4, testé).
 
 ### Risque résiduel
-- **Choix du bloc de déclenchement dans [t_k, t_k + Δ]** : un déclencheur peut attendre une mise à
+- ~~Choix du bloc de déclenchement~~ **Traité à l'incrément 2** : prix évalué à t_k (voir P2.a).
+  Il reste le résidu R5′, borné à maxDeviationBps / 2.
+- (historique) **Choix du bloc de déclenchement dans [t_k, t_k + Δ]** : un déclencheur peut attendre une mise à
   jour d'oracle favorable. C'est borné par la volatilité sur Δ. En pratique Δ est court, car tout
   le monde peut déclencher et un premier arrivé honnête suffit. Parade prévue : un **prix figé à
   t_k** (lecture de l'historique des rounds Chainlink `getRoundData` au premier round ≥ t_k).
@@ -92,23 +94,34 @@ fonction restreinte (P7.3). Tout appelant peut enchaîner `startSettlement` puis
 
 ## P2 — Confiance : oracle, Teecryptor, vérifieur
 
-### P2.a Oracle sans opérateur
+### P2.a Oracle sans opérateur — règle « 2 sur 3 à l'instant de clôture » (incrément 2)
 
-**Règle R** (publique, dans le contrat) :
-1. Chainlink : `latestRoundData()`. On exige `answer > 0`, `updatedAt ≥ now − MAX_STALENESS` et
-   `answeredInRound ≥ roundId`.
-2. Pyth : `getPriceNoOlderThan(id, MAX_STALENESS)`. On exige `price > 0` et
-   `conf ≤ price × MAX_CONF_BPS / 10⁴`. La mise à jour Pyth peut être **poussée par le
-   déclencheur** (`updatePriceFeeds`, frais payés par lui). Elle ne lui donne aucun pouvoir : les
-   données sont signées par Pyth.
-3. Normalisation des deux prix à 8 décimales, puis `|p_CL − p_Pyth| ≤ min(p_CL, p_Pyth) × MAX_DEV_BPS / 10⁴`.
-4. `p_k = (p_CL + p_Pyth) / 2`, converti dans les unités du pool.
-5. Si une condition échoue → le lot est **reporté**.
+**Règle R(t_k)** : publique, dans le contrat. Elle est évaluée à l'instant de **clôture** t_k, et
+non à l'instant du déclenchement.
 
-**Coût d'une manipulation** : pour déplacer p_k de x %, il faut corrompre **les deux** réseaux
-d'oracles de façon cohérente (x ≤ MAX_DEV_BPS s'il n'en corrompt qu'un, et alors le prix ne se
-déplace que de x/2). Pour Chainlink et Pyth, cela veut dire corrompre des ensembles de
-fournisseurs indépendants. C'est **strictement plus dur** que l'opérateur unique de la v1.
+| Source | Valeur « à t_k » | Validité |
+|---|---|---|
+| **Chainlink** (avec historique) | Round `h` fourni par le déclencheur, **vérifié** comme le dernier round tel que `updatedAt ≤ t_k` : `updatedAt(h) ≤ t_k` et `updatedAt(h+1) > t_k` s'il existe. Un mauvais indice fait **revert** : aucun choix possible. | `answer > 0`, `answeredInRound ≥ h`, âge à t_k ≤ `chainlinkMaxAge` |
+| **API3** (Api3ReaderProxyV1, sans historique) | Valeur courante **seulement si** `updatedAt ≤ t_k`. Sinon la valeur à t_k est inconnue et la source est invalide. | `answer > 0`, âge à t_k ≤ `api3MaxAge` (heartbeat 24 h + marge ; entre-temps, mises à jour sur déviation) |
+| **Pyth** | (a) **Première** publication signée dans [t_k, t_k + `pythWindow`] (`parsePriceFeedUpdatesUnique` : unicité garantie par `prevPublishTime < t_k`) ; ou (b) valeur stockée si `publishTime ≤ t_k` | Prix > 0, confiance ≤ `maxConfBps`, âge ≤ `pythMaxAge` |
+
+**Agrégation** :
+- au moins **2 sources valides** ;
+- prix = **médiane** (moyenne s'il n'y en a que 2) ;
+- au moins deux sources, dont la médiane, à ≤ `maxDeviationBps` l'une de l'autre ;
+- prix du pool ∈ ]0, `MAX_POOL_PRICE`].
+
+Sinon, le lot est **reporté**.
+
+**Ce que le déclencheur contrôle encore (résidu R5′)** : seulement la **validité** d'API3 et de
+Pyth-stocké. Par exemple, s'il attend qu'API3 se mette à jour après t_k, API3 devient invalide.
+L'effet est borné : le prix passe de la médiane à 3 sources à la moyenne des 2 autres, toutes deux
+concordantes à `maxDeviationBps` près. **Borne : ≤ maxDeviationBps / 2 du prix** (0,5 % avec
+1 %). Avant l'incrément 2, la borne était la variation totale du marché entre t_k et le
+déclenchement.
+
+**Coût d'une manipulation** : corrompre **2 réseaux d'oracles indépendants sur 3** de façon
+cohérente. Une seule source corrompue est écartée par la médiane (testé).
 
 **Alternatives écartées** :
 - une seule source (point unique) ;
@@ -190,3 +203,34 @@ dépositaires actifs du pool blindé, taille publiée et mesurée.
 - Taille de S au démarrage (petit pool = petit ensemble d'anonymat) ;
 - corrélation temporelle hors chaîne ;
 - H2.
+
+---
+
+## Intégrité arithmétique (incrément 2) — découverte par vérification formelle
+
+**Constat** : les opérations `euint64` de CoFHE (`add`, `sub`, `mul`) **rebouclent modulo 2⁶⁴**.
+Dans le circuit v1 et le premier circuit v2, le contrôle de couverture calcule `need = q × prix`.
+Un attaquant choisit q ≈ 2⁶⁴ / prix, de sorte que `need` reboucle vers une petite valeur et que le
+contrôle passe. Il est alors exécuté contre de vrais vendeurs. Si le coût réel `fill × prix`
+dépasse son solde QUOTE, `quote − coût` reboucle vers ≈ 2⁶⁴ : **création monétaire**, puis vol
+lors d'un retrait.
+- **Démontré** sur la v1 (test `VULNÉRABILITÉ CONNUE…`) : solde QUOTE de l'attaquant ≈ 1,8 × 10¹⁹.
+- Contre-exemple **recherché symboliquement** avec Halmos sur le modèle opération par opération
+  (`packages/formal`).
+
+**Correctif (v2)** :
+- `MAX_QTY = 10¹²` (contrôle chiffré `FHE.lte(q, MAX_QTY)` intégré à la couverture) ;
+- `MAX_POOL_PRICE = 10⁶` (contrôle public dans la règle de prix).
+
+Comme MAX_QTY × MAX_POOL_PRICE = 10¹⁸ < 2⁶⁴, aucune multiplication ne reboucle, et la couverture
+est exacte. L'addition des soldes reste bornée par l'offre totale (< 2⁶²), qui sera garantie par
+les réserves réelles (P4).
+
+**Propriétés vérifiées formellement** (Halmos, pour toutes les entrées, 3 ordres de 3 traders) :
+- conservation de BASE et de QUOTE ;
+- absence de solde rebouclé ;
+- exécution ≤ quantité demandée ;
+- volume acheté = volume vendu ;
+- l'acheteur paie exactement `fill × prix`.
+
+Résultats : voir `docs/s1-risques-residuels.md`.

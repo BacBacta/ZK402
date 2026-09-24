@@ -4,6 +4,9 @@ pragma solidity ^0.8.25;
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 /// @title SealedBatchPool — dark pool par lots, ordres chiffrés (CoFHE), phase 0
+/// @custom:security PROTOTYPE DE MESURE, VULNÉRABLE : q·prix reboucle modulo 2^64 (euint64), un
+///         acheteur peut passer le contrôle de couverture et rendre son solde QUOTE « négatif »
+///         (rebouclé). Corrigé dans SealedBatchPoolV2 (MAX_QTY, MAX_POOL_PRICE). Ne pas réutiliser.
 /// @notice Prototype de mesure pour l'idée S1 (docs/idees-nouvelles-base-7.md).
 ///         Une paire (BASE/QUOTE, crédits de démo). Chaque ordre = sens chiffré
 ///         (ebool, true = achat) + quantité chiffrée (euint64, en unités de BASE).
