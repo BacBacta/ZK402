@@ -166,6 +166,9 @@ en USDC pour les entreprises crypto-natives — est détaillée dans
 La cartographie des opportunités ZK et FHE sur Base (demande, concurrence, priorisation) est dans
 [`docs/opportunites-zk-fhe-base.md`](docs/opportunites-zk-fhe-base.md).
 
+L'étage 1 recommandé — identifiants ZK anonymes adossés à Coinbase Verifications — est détaillé dans
+[`docs/conception-identifiants-zk.md`](docs/conception-identifiants-zk.md).
+
 
 - Remplacer les crédits de démo par un FHERC20 (ou USDC wrappé) et des opérateurs à courte échéance.
 - Relais de gas / paymaster pour éviter que le payeur expose son wallet de gas.

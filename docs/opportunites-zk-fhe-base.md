@@ -66,6 +66,11 @@ Pour chaque opportunité : douleur, preuve de demande, solution technique, concu
   quelques semaines, et c'est une **brique** pour O2, O4 et la paie (KYB).
 - **Limite honnête** : l'inscription est publique : on sait que telle adresse *a rejoint* le groupe,
   pas où elle est utilisée ensuite. L'anonymat dépend de la taille du groupe.
+- **Limites vérifiées depuis** (détail dans [`conception-identifiants-zk.md`](conception-identifiants-zk.md)) :
+  Coinbase précise que ses attestations **ne doivent pas servir à des fins légales ou de
+  conformité**, donc O1 est un outil anti-sybil et de filtrage d'accès, pas un KYC. Un compte peut
+  attester jusqu'à 3 adresses (à confirmer), donc la borne est de ≤ 3 participations par personne et
+  par campagne. Semaphore v4 est déjà déployé sur Base et peut être réutilisé tel quel.
 
 ### O2 — Lancements équitables : enchères scellées anti-snipe
 
@@ -116,7 +121,9 @@ Pour chaque opportunité : douleur, preuve de demande, solution technique, concu
 - **Solution** :
   - **FHE** : un *wrapper* ERC-7984 (`cNVDAc`) aux soldes chiffrés, avec des hooks de conformité (gel
     sur demande de l'émetteur, liste noire) ;
-  - **ZK** : l'éligibilité Reg S (non-US) prouvée via O1, sans révéler l'identité.
+  - **ZK** : l'éligibilité Reg S (non-US) prouvée via O1, sans révéler l'identité. **Attention** :
+    les attestations Coinbase ne peuvent pas servir de preuve de conformité selon leurs conditions ;
+    cet usage exige un accord explicite de Coinbase.
 - **Obstacle majeur** : l'**émetteur** (Coinbase) doit accepter qu'un wrapper détienne ses jetons et
   que son pouvoir de gel s'exerce à travers lui. C'est une question juridique autant que technique.
 - **Concurrence** : outillage ERC-7984 générique (Zama, OpenZeppelin, Inco) ; Base Ledgers pour les
