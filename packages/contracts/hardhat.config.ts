@@ -25,6 +25,15 @@ const config: HardhatUserConfig = {
   },
   defaultNetwork: "hardhat",
   networks: {
+    hardhat: {
+      accounts: { count: 40 },
+      blockGasLimit: 1_000_000_000,
+      // Mesure sur fork (phase 0 de S1) : FORK_URL=https://sepolia.base.org
+      ...(process.env.FORK_URL
+        ? { chainId: 84532, forking: { url: process.env.FORK_URL, enabled: true } }
+        : {}),
+      allowUnlimitedContractSize: false,
+    },
     // localcofhe, eth-sepolia et arb-sepolia sont injectés par @cofhe/hardhat-plugin.
     // Base Sepolia doit être déclaré à la main.
     "base-sepolia": {
