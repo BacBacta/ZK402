@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-24T16:40:45.355Z",
+  "network": "base-sepolia",
+  "n": 2,
+  "pool": "0xe27bc5f2a96188cf59989987ae896884e1311ae4",
+  "deployTx": "0xb9c40038d5a5703b682af062593518647c55a26ae9ae5cfe6cecc779c0fd3424",
+  "encryptSecondsPerOrderAvg": 27.829651247500003,
+  "submitGasAvg": "297454",
+  "settleGasTotal": "2260885",
+  "settleTxs": 3,
+  "onchainSettleSeconds": 2.037722164999991,
+  "decryptReadySeconds": {
+    "first": 2.9993940160000108,
+    "median": 5.501687458000006,
+    "p90": 5.501687458000006,
+    "last": 5.501687458000006,
+    "ready": 2,
+    "of": 2
+  },
+  "fills": [
+    "5",
+    "5"
+  ]
+}
