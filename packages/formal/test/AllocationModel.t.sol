@@ -186,7 +186,7 @@ contract AllocationModelTest {
     {
         require(price > 0 && price <= MAX_PRICE && e <= MAX_QTY);
         require(base0 >= e); // couverture (L5)
-        require(uint256(quote0) + uint256(e) * price < (uint256(1) << 64)); // offre QUOTE bornée
+        require(quote0 < SUPPLY_BOUND); // offre QUOTE bornée (< 2^62), même hypothèse que les preuves globales
         uint64[] memory b = new uint64[](1);
         uint64[] memory q = new uint64[](1);
         b[0] = base0;

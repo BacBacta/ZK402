@@ -35,9 +35,10 @@
 | L2 : coût fill × prix exact (pas de rebouclage) | lemme | ✅ prouvé |
 | L5 : un ordre retenu est exactement couvert ; eff ∈ {0, q} | lemme | ✅ prouvé |
 | L3 : acheteur : QUOTE −fill·p exact, BASE +fill | lemme | ✅ prouvé |
-| L4 : vendeur : BASE −fill, QUOTE +fill·p exact | lemme | voir ci-dessous |
+| L4 : vendeur : BASE −fill, QUOTE +fill·p exact (hypothèse : QUOTE < 2⁶², comme les preuves globales) | lemme | ✅ prouvé |
 
-**Composition** : si L2 à L5 tiennent, chaque mise à jour de solde est exacte (sans rebouclage) ;
+**Conclusion** : la conservation de QUOTE est **établie par composition** des lemmes L2 à L5
+(tous prouvés) et de l'égalité Σfb = Σfs (prouvée). **Composition** : comme L2 à L5 tiennent, chaque mise à jour de solde est exacte (sans rebouclage) ;
 donc ΣQUOTE' = ΣQUOTE − p·Σfb + p·Σfs = ΣQUOTE, puisque Σfb = Σfs (prouvé).
 
 **Limites de la preuve** :
