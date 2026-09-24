@@ -29,6 +29,17 @@ const FUND_WEI = hre.ethers.parseEther(process.env.FUND_ETH || "0.0003");
 const RPC = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
 const now = () => performance.now() / 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function retry<T>(label: string, fn: () => Promise<T>, tries = 5): Promise<T> {
+  for (let k = 1; ; k++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      if (k >= tries) throw e;
+      console.log(`  ${label} : échec (${e?.code || e?.message}), nouvelle tentative ${k + 1}/${tries}`);
+      await sleep(5000 * k);
+    }
+  }
+}
 
 async function cofheClientFor(privateKey: `0x${string}`) {
   const chain = getChainById(84532)!;
@@ -53,7 +64,10 @@ async function main() {
   // 1. Déploiement
   let t = now();
   const f = await ethers.getContractFactory("SealedBatchPool");
-  const pool = await f.connect(operator).deploy(operator.address);
+  // POOL=0x… pour reprendre sur un contrat déjà déployé (lot encore ouvert).
+  const pool = process.env.POOL
+    ? (f.attach(process.env.POOL).connect(operator) as any)
+    : await f.connect(operator).deploy(operator.address);
   await pool.waitForDeployment();
   const poolAddress = await pool.getAddress();
   console.log(`SealedBatchPool déployé : ${poolAddress} (${(now() - t).toFixed(1)} s)`);
@@ -83,17 +97,17 @@ async function main() {
     const w = traders[i];
     const p = pool.connect(w) as any;
     await (await p.claimFaucet()).wait();
-    const client = await cofheClientFor(w.privateKey as `0x${string}`);
+    const client = await retry(`client ${i + 1}`, () => cofheClientFor(w.privateKey as `0x${string}`));
     clients.push(client);
     const isBuy = i % 2 === 0;
     const qty = BigInt(5 + i);
     expected.push({ isBuy, qty });
     t = now();
     // Deux entrées chiffrées séparément (chacune avec sa preuve), en parallèle.
-    const [[side, proofSide], [amount, proofQty]] = (await Promise.all([
+    const [[side, proofSide], [amount, proofQty]] = (await retry(`chiffrement ${i + 1}`, () => Promise.all([
       client.encryptInputs([Encryptable.bool(isBuy)]).setConsumingContract(poolAddress).execute(),
       client.encryptInputs([Encryptable.uint64(qty)]).setConsumingContract(poolAddress).execute(),
-    ])) as any[];
+    ]))) as any[];
     encTimes.push(now() - t);
     const r = await (await p.submitOrder(side, proofSide, amount, proofQty)).wait();
     submitGas.push(r.gasUsed);
