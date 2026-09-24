@@ -83,6 +83,9 @@ généré). Aucun tiers ne voit l'adresse.
 - **Dépendance** : aucune (les API Discord et Telegram sont publiques).
 - **Verdict** : ✅ bon canal de distribution (chaque communauté amène ses membres). Nécessite une
   re-vérification périodique (nouvel instantané) pour les détenteurs qui vendent.
+- **Attention** : sans nullifier, un même détenteur pourrait faire entrer plusieurs comptes Discord
+  (une preuve par compte). P2 a donc besoin d'un nullifier par communauté, avec la même limite que
+  P3/P4 pour les wallets à passkey (§ 2.2).
 
 ### P3 — Réclamation d'airdrop anonyme
 - **Usage** : un projet publie sa liste d'éligibilité (arbre). L'éligible réclame **vers une adresse
