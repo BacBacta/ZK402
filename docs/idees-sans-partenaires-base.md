@@ -24,6 +24,9 @@ révéler** », et plusieurs produits construits dessus.
 
 ## 2. La primitive : preuve de détention anonyme
 
+> **Révisée** : cette section est remplacée par [`conception-preuve-detention.md`](conception-preuve-detention.md),
+> qui corrige une faille (nullifier dérivé d'une signature) et résout les deux limites ci-dessous.
+
 ### 2.1 Arbre d'instantané public
 Un indexeur **open source** construit, à un bloc donné, un arbre de Merkle (Poseidon2) des soldes Base
 pour les actifs suivis (USDC, ETH, cbBTC…) :
