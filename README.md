@@ -173,7 +173,11 @@ Les mesures de phase 0 sur données publiques (marchés Limitless, jobs ACP de V
 [`docs/phase0-resultats.md`](docs/phase0-resultats.md). Les idées qui en découlent (réputation
 d'agents prouvée, palmarès scellé) sont dans
 [`docs/idees-nouvelles-base-6.md`](docs/idees-nouvelles-base-6.md). La piste « grand marché » (dark pool
-FHE sur Base) est dans [`docs/idees-nouvelles-base-7.md`](docs/idees-nouvelles-base-7.md).
+FHE sur Base) est dans [`docs/idees-nouvelles-base-7.md`](docs/idees-nouvelles-base-7.md). Mesures de phase 0 :
+[`docs/phase0-s1-resultats.md`](docs/phase0-s1-resultats.md). Programme de résolution des points
+ouverts : [`docs/prompt-s1-points-ouverts.md`](docs/prompt-s1-points-ouverts.md), incrément 1 dans
+[`docs/s1-modele-menaces.md`](docs/s1-modele-menaces.md), [`docs/s1-specification.md`](docs/s1-specification.md)
+et [`docs/s1-risques-residuels.md`](docs/s1-risques-residuels.md).
 
 - Remplacer les crédits de démo par un FHERC20 (ou USDC wrappé) et des opérateurs à courte échéance.
 - Relais de gas / paymaster pour éviter que le payeur expose son wallet de gas.
