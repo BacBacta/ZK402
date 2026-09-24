@@ -172,7 +172,8 @@ L'étage 1 recommandé — identifiants ZK anonymes adossés à Coinbase Verific
 Les mesures de phase 0 sur données publiques (marchés Limitless, jobs ACP de Virtuals) sont dans
 [`docs/phase0-resultats.md`](docs/phase0-resultats.md). Les idées qui en découlent (réputation
 d'agents prouvée, palmarès scellé) sont dans
-[`docs/idees-nouvelles-base-6.md`](docs/idees-nouvelles-base-6.md).
+[`docs/idees-nouvelles-base-6.md`](docs/idees-nouvelles-base-6.md). La piste « grand marché » (dark pool
+FHE sur Base) est dans [`docs/idees-nouvelles-base-7.md`](docs/idees-nouvelles-base-7.md).
 
 - Remplacer les crédits de démo par un FHERC20 (ou USDC wrappé) et des opérateurs à courte échéance.
 - Relais de gas / paymaster pour éviter que le payeur expose son wallet de gas.
