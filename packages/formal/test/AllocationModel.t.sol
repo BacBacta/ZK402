@@ -89,6 +89,41 @@ contract AllocationModelTest {
         }
     }
 
+    /// Conservation découpée (plus petites requêtes pour le solveur).
+    function check_fixed_conservationBase(
+        uint64[3] memory b0, uint64[3] memory q0, bool[3] memory buy, uint64[3] memory qty, uint64 price
+    ) public pure {
+        require(price > 0 && price <= MAX_PRICE);
+        (uint64[] memory b,,,) = _run(b0, q0, buy, qty, price, MAX_QTY);
+        assert(_sums(b) == uint256(b0[0]) + b0[1] + b0[2]);
+    }
+
+    function check_fixed_conservationQuote(
+        uint64[3] memory b0, uint64[3] memory q0, bool[3] memory buy, uint64[3] memory qty, uint64 price
+    ) public pure {
+        require(price > 0 && price <= MAX_PRICE);
+        (, uint64[] memory q,,) = _run(b0, q0, buy, qty, price, MAX_QTY);
+        assert(_sums(q) == uint256(q0[0]) + q0[1] + q0[2]);
+    }
+
+    function check_fixed_noNegativeQuote(
+        uint64[3] memory b0, uint64[3] memory q0, bool[3] memory buy, uint64[3] memory qty, uint64 price
+    ) public pure {
+        require(price > 0 && price <= MAX_PRICE);
+        (, uint64[] memory q,,) = _run(b0, q0, buy, qty, price, MAX_QTY);
+        uint256 sq0 = uint256(q0[0]) + q0[1] + q0[2];
+        for (uint256 i = 0; i < 3; i++) assert(q[i] <= sq0);
+    }
+
+    function check_fixed_noNegativeBase(
+        uint64[3] memory b0, uint64[3] memory q0, bool[3] memory buy, uint64[3] memory qty, uint64 price
+    ) public pure {
+        require(price > 0 && price <= MAX_PRICE);
+        (uint64[] memory b,,,) = _run(b0, q0, buy, qty, price, MAX_QTY);
+        uint256 sb0 = uint256(b0[0]) + b0[1] + b0[2];
+        for (uint256 i = 0; i < 3; i++) assert(b[i] <= sb0);
+    }
+
     /// Équilibre : volume acheté exécuté = volume vendu exécuté (circuit corrigé).
     function check_fixed_buyEqualsSell(
         uint64[3] memory b0, uint64[3] memory q0, bool[3] memory buy, uint64[3] memory qty, uint64 price
