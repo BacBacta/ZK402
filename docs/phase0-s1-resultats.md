@@ -1,4 +1,4 @@
-# Phase 0 de S1 (dark pool FHE) — coût d'un lot d'ordres chiffrés (24 septembre 2026)
+# Phase 0 de S1 (dark pool FHE) — coût et latence d'un lot d'ordres chiffrés (24 septembre 2026)
 
 > **Question** : un lot d'ordres chiffrés peut-il être apparié par CoFHE sur Base à un coût et avec
 > une latence acceptables ?
@@ -66,47 +66,61 @@
 d'un bloc de Base. Le plafond de gas par transaction se respecte en réglant 8 ordres par
 transaction (4,6 M chacune).
 
-## Résultats : latence (NON mesurée)
-- **Un fork ne peut pas mesurer la latence** : le calcul FHE est fait **hors chaîne** par le
-  coprocesseur, qui observe la vraie chaîne. Il faut un déploiement réel sur Base Sepolia, donc une
-  **clé testnet financée**. Aucune n'a été fournie, et je n'en ai pas inventé.
-- **Ce qu'on sait déjà** :
-  - **côté chaîne**, le règlement d'un lot de 16 ordres tient en 4 transactions, soit un ou deux
-    blocs (2 à 4 s) ;
-  - **aucun déchiffrement n'est nécessaire pour régler** : les soldes restent chiffrés. Le
-    déchiffrement n'intervient que pour que chacun lise son exécution (`decryptForView`, hors
-    chaîne) ou pour un retrait ;
-  - **côté coprocesseur**, le chemin critique est **séquentiel** : totaux cumulés, puis restes FIFO.
-    Il compte environ 5 opérations dépendantes par ordre, soit **~80 pour 16 ordres**. Les
-    opérations indépendantes (`mul`, `gte`) peuvent tourner en parallèle.
-- **Estimation, à confirmer** : 5 à 10 s si le coprocesseur parallélise les branches
-  indépendantes, jusqu'à environ 60 s s'il exécute tout en série. Hypothèse : de l'ordre de 100 à
-  200 ms par opération 64 bits en TFHE sur CPU, un ordre de grandeur qu'il faut vérifier sur la
-  vraie infrastructure.
-- **Si c'est trop lent**, deux leviers :
-  - des lots plus petits (8 ordres, par paire) ;
-  - remplacer le FIFO séquentiel par un calcul au prorata. C'est plus parallèle, mais il faut une
-    division chiffrée, qui est plus coûteuse.
+## Résultats : latence (MESURÉE sur Base Sepolia, 24 septembre 2026)
+
+Déploiement réel : contrat `0x66f39612c36ff13da8909119b2a1d7c60c752e95` sur Base Sepolia.
+16 traders distincts ; les ordres ont été chiffrés avec `@cofhe/sdk` et le vrai vérifieur Fhenix,
+puis appariés par le vrai coprocesseur CoFHE. Script :
+[`scripts/latency-standalone.ts`](../packages/contracts/scripts/latency-standalone.ts) ; résultats
+bruts : [`deployments/latency-base-sepolia.json`](../packages/contracts/deployments/latency-base-sepolia.json).
+
+| Étape | Mesure (lot de 16 ordres) |
+|---|---|
+| Chiffrement d'un ordre côté trader (2 entrées + preuves + vérifieur) | **≈ 27 s** par ordre (entre 26 et 29 s), fait **avant** le lot |
+| Soumission d'un ordre | 290 k de gas (vraie vérification d'entrée comprise) |
+| Règlement on-chain | **3,9 s**, 5 transactions, 14,7 M de gas au total (916 k par ordre, comme sur le fork) |
+| Délai entre la fin du règlement et le moment où le trader **lit son exécution** | premier **16,8 s** · médiane **31,1 s** · p90 38,5 s · **dernier 39,8 s** |
+| Exactitude | ✅ 16/16. Les 8 acheteurs (96 unités) sont exécutés en entier ; côté vendeurs, FIFO 6, 8, 10, 12, 14, 16, 18, puis **12** pour le dernier (le reste non croisé). C'est exactement le résultat attendu |
+
+**Observations** :
+- **Le délai croît de façon quasi linéaire** avec le rang de l'ordre, d'environ 1,5 s par ordre.
+  C'est le chemin critique **séquentiel** prévu : les restes FIFO passent d'un ordre à l'autre, et le
+  coprocesseur les calcule dans l'ordre.
+- **Même avec 2 ordres, il faut 3 à 5,5 s.** C'est le coût fixe du calcul et du déchiffrement par le
+  réseau de seuil.
+- **Le chiffrement côté client (≈ 27 s) domine l'expérience du trader.** Il se fait avant l'envoi et ne
+  retarde pas le lot, mais un agent doit anticiper. Cette mesure est faite dans un conteneur cloud :
+  elle est à refaire sur un vrai poste ou un vrai serveur.
+
+**Problèmes rencontrés et contournés (utiles pour la suite)** :
+- dans le processus Hardhat, les appels du SDK vers le vérifieur échouaient par délai de connexion ;
+  en script autonome (viem), ils passent ;
+- l'estimation de gas du nœud **sous-évalue** les appels au TaskManager (un `settleStep` estimé à
+  810 k a échoué à court de gas) : il faut des plafonds explicites.
 
 ## Verdict
 
 | Critère | Résultat |
 |---|---|
-| Coût < 1 $ par ordre | ✅ **≈ 0,02 $** (mesuré sur fork, gas actuel de Base mainnet) |
-| Lot de 16 réglé en < 60 s | ⏳ **Non mesuré.** Côté chaîne ≈ 2 à 4 s ; côté coprocesseur, estimé de 5 à 60 s |
-| Logique d'appariement correcte et confidentielle | ✅ 8 tests sur mocks |
+| Coût < 1 $ par ordre | ✅ **≈ 0,02 $** (gas mesuré sur Base Sepolia, converti au gas et au prix de l'ETH de Base mainnet) |
+| Lot de 16 réglé en < 60 s | ✅ **39,8 s** jusqu'à la dernière exécution lisible, 31 s en médiane (le règlement on-chain seul prend 3,9 s) |
+| Appariement correct et confidentiel | ✅ 16/16 sur le vrai réseau, et 8 tests sur mocks |
 
-**L'idée S1 passe la moitié « coût » de la phase 0 avec une large marge.** Le risque restant est la
-**latence du coprocesseur**. Pour la mesurer :
-1. fournir une clé Base Sepolia financée (dans `.env`, jamais commitée) ;
-2. déployer `SealedBatchPool` ;
-3. soumettre 16 vrais ordres chiffrés (`encryptInputs`) ;
-4. chronométrer le délai jusqu'à ce que chaque trader puisse déchiffrer son exécution
-   (`decryptForView`).
+**S1 passe sa phase 0.** Les limites à traiter en phase 1 :
+1. **La latence croît avec la taille du lot** (≈ 1,5 s par ordre). Au-delà d'environ 30 ordres, on
+   dépasse la minute. Pistes :
+   - des lots par paire, plafonnés à 16–24 ordres ;
+   - remplacer le FIFO séquentiel par un calcul au prorata ou par arbre, plus parallèle.
+2. **Chiffrement côté client ≈ 27 s** : à mesurer sur une vraie machine, et à préparer à l'avance
+   (par exemple, les agents pré-chiffrent leurs ordres).
+3. **Les frais de CoFHE sur mainnet** restent inconnus : à demander à Fhenix.
 
 ## Reproduire
 ```bash
 cd packages/contracts
 npx hardhat test test/SealedBatchPool.ts                                   # correction + gas des mocks
 FORK_URL=https://sepolia.base.org SIZES=8,16,32 STEP=8 npx hardhat run scripts/bench-fork.ts   # gas réel
+# latence réelle (clé Base Sepolia financée dans ../../.env, jamais commitée)
+npx hardhat compile && set -a && . ../../.env && set +a
+NODE_USE_ENV_PROXY=1 N=16 npx ts-node --transpile-only scripts/latency-standalone.ts
 ```
