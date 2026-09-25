@@ -23,6 +23,10 @@
    latence ?
 5. **Zones de sécurité** (`securityZone`) : sont-elles traitées par des exécuteurs distincts, et
    donc en parallèle ? Peut-on s'en servir pour répartir la charge ?
+5 bis. **Priorité dans la file** : sur notre pool, des multiplications soumises juste après des
+   calculs légers retardent le déchiffrement de ces derniers (32 ordres : 35 s au lieu de 14,6 s).
+   Les déchiffrements attendent-ils derrière tous les calculs en file ? Peut-on donner une
+   priorité, ou existe-t-il une file séparée pour les déchiffrements ?
 6. **Identifiants déterministes et cache** : nous avons observé que des opérations identiques
    sont servies depuis un cache. Est-ce voulu ? Le fait que deux calculs soient identiques
    est-il observable par un tiers ?
@@ -74,6 +78,9 @@
 >    Does the coprocessor already shortcut trivially-encrypted operands?
 > 4. GPU acceleration: timeline and expected gains? Any latency SLA?
 > 5. Are security zones executed by separate workers (usable to spread load)?
+> 5b. Queue priority: heavy muls submitted right after cheap ops delay the decryption of those
+>     cheap results (32 orders: 35 s vs 14.6 s when the muls are held back). Do decryptions wait
+>     behind all queued compute? Is there a priority or a separate decryption queue?
 > 6. Deterministic handles are served from a cache for identical ops. Intended? Is it
 >    observable by third parties?
 > 7. Mainnet fees per FHE op or per decryption, beyond TaskManager gas?

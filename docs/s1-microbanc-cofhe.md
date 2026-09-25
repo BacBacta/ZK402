@@ -64,3 +64,14 @@ Pente entre deux longueurs de chaîne.
    **Question clé pour Fhenix.**
 6. **Autre contrainte découverte** : Base Sepolia refuse les transactions au-delà d'environ
    **16,7 M de gas** (2²⁴, EIP-7825). Le règlement doit rester découpé en étapes.
+
+## Vérification : la solution 1 mesurée sur le pool réel
+
+L'estimation du point 4 (« 64 ordres ≈ 20 à 30 s ») est **confirmée : 22,4 s** pour la dernière
+exécution d'un lot de 64 ordres (voir la spécification, section P3, solution 1).
+
+Un effet non prévu est apparu. Lancée juste après Fills, la phase Apply (2 multiplications par
+ordre) retardait la lecture des exécutions : 35 s au lieu de 14,6 s pour 32 ordres. **Le
+coprocesseur traite les calculs dans l'ordre d'arrivée, et les déchiffrements attendent derrière.**
+Le contrat impose donc un délai de grâce on-chain entre les deux phases. Question ajoutée pour
+Fhenix : existe-t-il une priorité entre requêtes, ou une file séparée pour les déchiffrements ?

@@ -360,7 +360,7 @@ ou déchiffrement vérifiable).
   du coprocesseur CoFHE du testnet, environ **15 opérations FHE par seconde** (≈ 860 opérations
   en ≈ 55 s pour 32 ordres), et **non la profondeur** du calcul. Le scan apporte un gain réel mais
   limité (−12 % à −21 % à 16 ordres), ce qui suggère un parallélisme partiel chez le coprocesseur.
-- **L'objectif « 64 ordres en < 60 s » n'est PAS atteignable sur l'infrastructure actuelle**. Par
+- **Avec le scan seul**, l'objectif « 64 ordres en < 60 s » n'était pas atteignable (voir la solution 1 ci-dessous, qui l'atteint). Par
   extrapolation linéaire mesurée, 64 ordres donneraient ≈ 135 s.
 - **Ce qui est atteignable** : **≈ 24 ordres par lot pour une lecture en < 60 s**, et de l'ordre de
   1 500 ordres par heure si le débit du coprocesseur est partagé entre tous les lots (à vérifier
@@ -374,3 +374,59 @@ ou déchiffrement vérifiable).
 - **Chiffrement côté client** : 16 s mesurées dans un conteneur cloud, pour un objectif de 5 s.
   **Non atteint.** Le coût est dominé par la preuve de connaissance du chiffré, calculée
   localement ; reste à mesurer sur un vrai poste ou un serveur multi-cœur.
+
+### Solution 1 — règlement à deux vitesses (incrément 5 bis, implémentée et mesurée)
+
+Le micro-banc ([`s1-microbanc-cofhe.md`](s1-microbanc-cofhe.md)) a montré que le goulot est la
+**multiplication 64 bits** (≈ 1 par seconde, non parallélisée), et non la profondeur du calcul.
+La construction retire donc les multiplications du chemin qui mène à la lecture des exécutions.
+
+1. **Séquestre au prix plafond, à la soumission.** La première soumission d'un lot k fixe
+   `cap_k = R(maintenant) × (1 + 3 %)` (règle 2 sur 3, publique). Chaque ordre bloque alors, pendant
+   que le lot est encore ouvert :
+   - un vendeur : `q` BASE ;
+   - un acheteur : `q × cap_k` QUOTE (la multiplication se fait ici, hors chemin critique).
+   `eff = q` si la couverture et la borne `q ≤ MAX_QTY` sont satisfaites, 0 sinon (ok chiffré).
+2. **Préfixes incrémentaux.** À chaque soumission, le préfixe du même sens (Σ des `eff`
+   antérieurs) est copié dans l'ordre, puis les totaux chiffrés sont mis à jour. Aucune passe de
+   scan au règlement.
+3. **Phase Fills (rapide)** : `M = min(totB, totS)`, ou `M = 0` si le prix de règlement `p > cap_k`
+   (lot non exécuté, tout est remboursé). Pour chaque ordre, 4 opérations **sans multiplication** :
+   `rem = M ≥ prefix ? M − prefix : 0 ; fill = min(eff, rem)`. C'est exactement la formule du scan,
+   déjà **prouvée équivalente au FIFO** (Halmos, `check_scanEqualsFifo`). L'exécution est alors
+   lisible par son trader.
+4. **Délai de grâce on-chain**, fixé à la fin de Fills :
+   `applyNotBefore = maintenant + min(6 + n/2, 120)` secondes ; toute étape Apply plus tôt échoue
+   (`ApplyTooEarly`). Raison **mesurée** : lancées aussitôt, les multiplications d'Apply passent
+   devant les déchiffrements des exécutions dans la file du coprocesseur.
+5. **Phase Apply (différée)** : `coût = fill × p` ; l'acheteur reçoit `fill` BASE et récupère
+   `séquestre − coût` ; le vendeur reçoit `coût` QUOTE et récupère `eff − fill` BASE.
+
+**Sûreté.** Comme `p ≤ cap_k` dès qu'il y a exécution, `coût ≤ fill × cap_k ≤ séquestre` : pas de
+rebouclage ni de solde négatif. Si `p > cap_k`, rien n'est exécuté et le séquestre est rendu en
+entier. Tests : 117 au total, dont 80 scénarios aléatoires contre le modèle de référence (avec
+plafond), un dépassement de plafond remboursé et un lot de 19 ordres réglé par pas de 3.
+
+#### Mesures réelles (Base Sepolia, 25 septembre 2026, preuve unique, pas de 8 ordres)
+
+| Lot | Version | Règlement on-chain | Lecture : médiane | Lecture : dernier | Gas du règlement | Exact |
+|---|---|---|---|---|---|---|
+| 32 | Scan (rappel) | 13,8 s | 48,2 s | 68,7 s | 42,1 M | 32/32 |
+| 32 | Deux vitesses, Apply enchaîné | 7,4 s | 19,2 s | 35,3 s | 18,4 M | 32/32 |
+| 32 | Deux vitesses, Apply retenu (contrôle) | — | 14,2 s | **14,6 s** | 18,4 M | 32/32 |
+| 64 | Deux vitesses, Apply enchaîné | 13,9 s | 37,1 s | 75,6 s | 37,0 M | 64/64 |
+| 64 | **Deux vitesses + délai de grâce on-chain** | 55,9 s¹ | **21,0 s** | **22,4 s** | 37,1 M | 64/64 |
+
+¹ Inclut le délai de grâce (38 s) ; les soldes sont définitifs à la fin d'Apply.
+
+Latence mesurée depuis l'envoi de `startSettlement` jusqu'à la lecture de l'exécution par son
+trader (`decryptForView`). Données : `packages/contracts/deployments/latency-twospeed-*.json`.
+
+**Conclusion.** L'objectif **« 64 ordres lisibles en moins de 60 s » est atteint : 22,4 s**, contre
+≈ 135 s extrapolés pour le scan (÷ 6). Coûts associés, annoncés :
+- l'acheteur immobilise 3 % de QUOTE en plus pendant le lot (rendus à Apply) ;
+- un mouvement de prix > 3 % entre l'ouverture et la clôture du lot annule le lot (aucune perte) ;
+- une soumission exige des oracles frais (2 sur 3) à l'ouverture du lot ;
+- les soldes définitifs arrivent ≈ 40 s après les exécutions (délai de grâce + Apply) ;
+- le débit global reste 2 multiplications 64 bits par ordre : ce qui a changé, c'est **où** elles se
+  trouvent, pas **combien** il y en a.
