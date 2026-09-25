@@ -50,6 +50,11 @@ contract SealedBatchPoolV2 {
     uint256 public immutable maxConfBps;
     /// @notice Prix (8 décimales, USD par unité d'actif) → unités de QUOTE par unité de BASE.
     uint256 public immutable priceDivisor;
+    /// @notice Contrat d'entrée blindée (ShieldedEntry) seul autorisé à créditer des soldes.
+    ///         address(0) = mode démo (faucet actif, pas d'entrée blindée).
+    address public immutable entry;
+    /// @notice Frais par ordre (wei), anti-spam ; versés à celui qui TERMINE le règlement du lot.
+    uint256 public immutable submitFee;
     uint64 public immutable genesis;
     uint64 public immutable batchDuration;
 
@@ -68,6 +73,8 @@ contract SealedBatchPoolV2 {
     /// @dev batchId + 1 du dernier lot où le trader a soumis (un ordre par lot et par trader).
     mapping(address => uint256) private _submittedBatchPlus1;
     mapping(uint256 => Order[]) private _orders;
+    /// @notice Frais accumulés par lot (payés au finisseur du règlement).
+    mapping(uint256 => uint256) public batchFees;
 
     /// @notice Prochain lot à régler (les lots se règlent strictement dans l'ordre).
     uint256 public nextToSettle;
@@ -96,6 +103,8 @@ contract SealedBatchPoolV2 {
     event BatchSettled(uint256 indexed batchId);
     event BatchSkippedEmpty(uint256 indexed batchId);
     event BatchPostponed(uint256 indexed batchId, uint8 reason);
+    event Credited(address indexed account);
+    event KeeperPaid(uint256 indexed batchId, address indexed keeper, uint256 amount);
 
     // Validité par source (bits) et codes de report (BatchPostponed.reason)
     uint8 public constant R_NOT_ENOUGH_SOURCES = 1; // moins de 2 sources valides
@@ -111,6 +120,9 @@ contract SealedBatchPoolV2 {
     error BadParams();
     error RefundFailed();
     error BadChainlinkHint();
+    error OnlyEntry();
+    error FaucetDisabled();
+    error BadFeeValue();
 
     struct OracleConfig {
         address chainlinkFeed;
@@ -125,7 +137,13 @@ contract SealedBatchPoolV2 {
         uint256 maxConfBps;
     }
 
-    constructor(OracleConfig memory o, uint256 priceDivisor_, uint64 batchDuration_) {
+    constructor(
+        OracleConfig memory o,
+        uint256 priceDivisor_,
+        uint64 batchDuration_,
+        address entry_,
+        uint256 submitFee_
+    ) {
         if (
             o.chainlinkFeed == address(0) || o.api3Feed == address(0) || o.pyth == address(0)
                 || o.chainlinkMaxAge == 0 || o.api3MaxAge == 0 || o.pythMaxAge == 0 || o.pythWindow == 0
@@ -144,6 +162,8 @@ contract SealedBatchPoolV2 {
         maxConfBps = o.maxConfBps;
         priceDivisor = priceDivisor_;
         batchDuration = batchDuration_;
+        entry = entry_;
+        submitFee = submitFee_;
         genesis = uint64(block.timestamp);
         _zero = FHE.asEuint64(0);
         FHE.allowThis(_zero);
@@ -171,6 +191,7 @@ contract SealedBatchPoolV2 {
 
     /// @notice Crédits de démo. Remplacé par des dépôts d'actifs réels à l'incrément P4.
     function claimFaucet() external {
+        if (entry != address(0)) revert FaucetDisabled();
         euint64 b = FHE.asEuint64(FAUCET_BASE);
         euint64 q = FHE.asEuint64(FAUCET_QUOTE);
         if (hasAccount[msg.sender]) {
@@ -179,6 +200,22 @@ contract SealedBatchPoolV2 {
         }
         hasAccount[msg.sender] = true;
         _setBalances(msg.sender, b, q);
+    }
+
+    /// @notice Crédit d'un pseudonyme par l'entrée blindée (réclamation anonyme d'une note).
+    ///         Le montant crédité est celui de la classe de note (public par construction : les
+    ///         classes sont des paliers fixes, ce qui maximise l'ensemble d'anonymat).
+    function credit(address account, uint64 baseAmount, uint64 quoteAmount) external {
+        if (msg.sender != entry || entry == address(0)) revert OnlyEntry();
+        euint64 b = FHE.asEuint64(baseAmount);
+        euint64 q = FHE.asEuint64(quoteAmount);
+        if (hasAccount[account]) {
+            b = FHE.add(_base[account], b);
+            q = FHE.add(_quote[account], q);
+        }
+        hasAccount[account] = true;
+        _setBalances(account, b, q);
+        emit Credited(account);
     }
 
     function baseBalanceOf(address a) external view returns (euint64) {
@@ -200,13 +237,15 @@ contract SealedBatchPoolV2 {
         bytes calldata proofSide,
         externalEuint64 encQty,
         bytes calldata proofQty
-    ) external {
+    ) external payable {
         _submit(FHE.asEbool(encIsBuy, proofSide), FHE.asEuint64(encQty, proofQty));
     }
 
     function _submit(ebool isBuy, euint64 qty) internal {
         if (!hasAccount[msg.sender]) revert NoAccount();
+        if (msg.value != submitFee) revert BadFeeValue();
         uint256 k = currentBatch();
+        batchFees[k] += msg.value;
         if (_orders[k].length >= MAX_ORDERS) revert BatchFull();
         if (_submittedBatchPlus1[msg.sender] == k + 1) revert AlreadySubmitted();
         _submittedBatchPlus1[msg.sender] = k + 1;
@@ -418,7 +457,14 @@ contract SealedBatchPoolV2 {
             phase = Phase.Idle;
             cursor = 0;
             nextToSettle = k + 1;
+            uint256 fees = batchFees[k];
+            batchFees[k] = 0;
             emit BatchSettled(k);
+            if (fees > 0) {
+                (bool okPay,) = msg.sender.call{value: fees}("");
+                if (!okPay) revert RefundFailed();
+                emit KeeperPaid(k, msg.sender, fees);
+            }
             return true;
         }
         return false;

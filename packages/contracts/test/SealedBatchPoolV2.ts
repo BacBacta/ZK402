@@ -43,7 +43,7 @@ async function deployFixture() {
     maxConfBps: CONF_BPS,
   };
   const f = await hre.ethers.getContractFactory("SealedBatchPoolV2");
-  const pool = await f.deploy(cfg, DIVISOR, DURATION);
+  const pool = await f.deploy(cfg, DIVISOR, DURATION, hre.ethers.ZeroAddress, 0n);
   return { pool, poolAddress: await pool.getAddress(), cl, a3, py, signers, cfg };
 }
 
@@ -269,9 +269,9 @@ describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle 2 sur 3 à
   it("rejette des paramètres de construction dangereux", async function () {
     const o = await loadFixture(deployFixture);
     const f = await hre.ethers.getContractFactory("SealedBatchPoolV2");
-    await expect(f.deploy({ ...o.cfg, maxDeviationBps: 1_001n }, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
-    await expect(f.deploy({ ...o.cfg, api3Feed: hre.ethers.ZeroAddress }, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
-    await expect(f.deploy({ ...o.cfg, pythWindow: 0n }, DIVISOR, DURATION)).to.be.revertedWithCustomError(f, "BadParams");
+    await expect(f.deploy({ ...o.cfg, maxDeviationBps: 1_001n }, DIVISOR, DURATION, hre.ethers.ZeroAddress, 0n)).to.be.revertedWithCustomError(f, "BadParams");
+    await expect(f.deploy({ ...o.cfg, api3Feed: hre.ethers.ZeroAddress }, DIVISOR, DURATION, hre.ethers.ZeroAddress, 0n)).to.be.revertedWithCustomError(f, "BadParams");
+    await expect(f.deploy({ ...o.cfg, pythWindow: 0n }, DIVISOR, DURATION, hre.ethers.ZeroAddress, 0n)).to.be.revertedWithCustomError(f, "BadParams");
   });
 });
 

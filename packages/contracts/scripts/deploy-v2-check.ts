@@ -20,7 +20,7 @@ async function main() {
   const f = await hre.ethers.getContractFactory("SealedBatchPoolV2");
   const pool = process.env.POOL
     ? f.attach(process.env.POOL)
-    : await f.deploy(BASE_SEPOLIA_ORACLES, 1_000_000_000n, 120n, { gasLimit: 4_000_000n });
+    : await f.deploy(BASE_SEPOLIA_ORACLES, 1_000_000_000n, 120n, hre.ethers.ZeroAddress, 0n, { gasLimit: 4_000_000n });
   await pool.waitForDeployment();
   const addr = await pool.getAddress();
   console.log("SealedBatchPoolV2 :", addr);

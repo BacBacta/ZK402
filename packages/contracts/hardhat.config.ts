@@ -17,10 +17,21 @@ const config: HardhatUserConfig = {
     gasWarning: true,
   },
   solidity: {
-    version: "0.8.28",
-    settings: {
-      evmVersion: "cancun",
-      optimizer: { enabled: true, runs: 200 },
+    compilers: [
+      {
+        version: "0.8.28",
+        settings: {
+          evmVersion: "cancun",
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+    ],
+    overrides: {
+      // Vérifieur UltraHonk généré par bb : optimisé pour la TAILLE (limite EIP-170 de 24 576 octets).
+      "contracts/zk/ClaimVerifier.sol": {
+        version: "0.8.28",
+        settings: { evmVersion: "cancun", optimizer: { enabled: true, runs: 1 } },
+      },
     },
   },
   defaultNetwork: "hardhat",
@@ -28,6 +39,8 @@ const config: HardhatUserConfig = {
     hardhat: {
       accounts: { count: 40 },
       blockGasLimit: 1_000_000_000,
+      // Frais proches de Base (~0,006 gwei) : l'allocation de gas des pseudonymes est réaliste.
+      initialBaseFeePerGas: 1_000_000,
       // Mesure sur fork (phase 0 de S1) : FORK_URL=https://sepolia.base.org
       ...(process.env.FORK_URL
         ? { chainId: 84532, forking: { url: process.env.FORK_URL, enabled: true } }

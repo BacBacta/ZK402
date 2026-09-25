@@ -37,6 +37,8 @@
     "ethers": "^6.4.0",
     "hardhat": "^2.22.19",
     "hardhat-gas-reporter": "^1.0.8",
+    "poseidon-lite": "^0.3.0",
+    "poseidon-solidity": "0.0.5",
     "rimraf": "^6.0.1",
     "solidity-coverage": "^0.8.0",
     "ts-node": ">=10.9.0",

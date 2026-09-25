@@ -79,6 +79,12 @@ importers:
       hardhat-gas-reporter:
         specifier: ^1.0.8
         version: 1.0.10(bufferutil@4.1.0)(hardhat@2.29.1(bufferutil@4.1.0)(ts-node@10.9.2(@types/node@22.20.4)(typescript@5.9.3))(typescript@5.9.3)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
+      poseidon-lite:
+        specifier: ^0.3.0
+        version: 0.3.0
+      poseidon-solidity:
+        specifier: 0.0.5
+        version: 0.0.5
       rimraf:
         specifier: ^6.0.1
         version: 6.1.3
@@ -3318,6 +3324,12 @@ packages:
         optional: true
       wagmi:
         optional: true
+
+  poseidon-lite@0.3.0:
+    resolution: {integrity: sha512-ilJj4MIve4uBEG7SrtPqUUNkvpJ/pLVbndxa0WvebcQqeIhe+h72JR4g0EvwchUzm9sOQDlOjiDNmRAgxNZl4A==}
+
+  poseidon-solidity@0.0.5:
+    resolution: {integrity: sha512-NzrvSwHzvZgT4hvg2GyGqeR+UOU/eLSEt4wAoXEua+VaR7NTKKwx1X9bPlh1VMBEVEno+IWvkRBbidFGzTeAqQ==}
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -8848,6 +8860,10 @@ snapshots:
       - '@types/react'
       - immer
       - use-sync-external-store
+
+  poseidon-lite@0.3.0: {}
+
+  poseidon-solidity@0.0.5: {}
 
   possible-typed-array-names@1.1.0: {}
 
