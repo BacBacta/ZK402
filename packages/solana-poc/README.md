@@ -104,6 +104,37 @@ doit viser la **file** (`queue`) de l'arbre d'état V2, sinon le programme Light
 L'écart avec le local (359 814 CU) vient de l'arbre d'état : V1 en local, V2 (par lots, moins
 coûteux à l'insertion) sur devnet.
 
+## Pool complet : dépôt SPL + arbre on-chain + vérification de la racine — `pool/`, `pool.js`
+
+Programme `pool` (Anchor, compte `Pool` en zero-copy) :
+- `initialize(coupure)` : pool pour un jeton SPL (USDC ou autre) ; le coffre est un compte de
+  jetons dont le propriétaire est le PDA du pool ;
+- `deposit(engagement)` : transfère la coupure vers le coffre et insère l'engagement dans
+  l'arbre de Merkle incrémental on-chain (Poseidon natif, profondeur 20, 30 racines d'historique) ;
+- `spend` : contrôles bon marché d'abord (mint des comptes, **racine connue**, **destinataire et
+  relayeur payés = ceux de la preuve**, frais ≤ coupure), puis preuve Groth16, nullificateur
+  compressé Light, et paiement `coupure − frais` / `frais` depuis le coffre.
+
+Un compte Solana est représenté dans le corps BN254 par ses 31 derniers octets. Test avec un
+jeton de test à 6 décimales (comme l'USDC) : le vrai USDC devnet exige le faucet de Circle ; le
+programme accepte tout jeton SPL classique.
+
+### Résultats locaux (25 septembre 2026) — `results-pool-local.json`
+
+| Test | Résultat |
+|---|---|
+| `initialize` / `deposit` | ✅ 30 212 CU / **≈ 26 300 CU par dépôt** (transfert + 20 hachages Poseidon), 382 o |
+| Racine on-chain = racine recalculée hors chaîne (2 dépôts) | ✅ identique |
+| Preuve valide mais pour une autre racine | ✅ refusée (`UnknownRoot`, 13 633 CU : refus avant la vérification de la preuve) |
+| Bonne preuve, paiement vers un autre compte que le destinataire prouvé | ✅ refusé (`RecipientMismatch`) |
+| Dépense valide | ✅ **399 474 CU**, 920 o (transaction v0 avec table d'adresses) ; destinataire **0,99**, relayeur **+0,01**, coffre 2 → 1 |
+| Double dépense (rejeu) | ✅ refusée (Light 0x3779) |
+| Génération de la preuve (serveur) | ≈ 0,8 s |
+
+Taille du programme : 289 Ko (profil `opt-level = "z"`, LTO) → ≈ 1,47 SOL de loyer sur devnet.
+Piège rencontré : copier le compte `Pool` (2,4 Ko) sur la pile provoquait un accès mémoire
+invalide (pile de 4 Ko par appel) ; seuls les champs utiles sont lus.
+
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
 Premier essai : une preuve valide restait **acceptée avec `recipient`, `relayer` ou `fee`
