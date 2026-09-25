@@ -1,0 +1,42 @@
+{
+  "date": "2026-09-25T13:22:35.514Z",
+  "rpc": "https://devnet.helius-rpc.com/?api-key=…",
+  "program": "H9YGaz5zPS1LXAjhDFnpj88UQGYbDoy64UQJtXBVnzno",
+  "rootAfterDeposits": true,
+  "tx1": {
+    "sig": "5Ko2grDJM9cbpdSSoPV1aqqy6Te8DZSxmz5j5g69MVo8EqtZpPj5ZqrtEMWZdfSoUXn2A2ZMhaWFNTHJLAXCu8HN",
+    "ok": true,
+    "computeUnits": 736847,
+    "txBytes": 1112
+  },
+  "rootAfterTx1": true,
+  "replayTx1": {
+    "rejected": true,
+    "error": "Program log: ProgramError occurred. Error Code: Custom(14201). Error Number: 14201. Error Message: Custom program error: 0x3779."
+  },
+  "respendA": {
+    "rejected": true,
+    "indexerRefused": true
+  },
+  "inflatedWithdraw": {
+    "rejected": true,
+    "error": "Program log: AnchorError occurred. Error Code: InvalidProof. Error Number: 6000. Error Message: Preuve invalide."
+  },
+  "tx2": {
+    "sig": "5xL7ZBeYARp4EGm5RTJrz6htQ5LefqybDdkXs5rYj9N44eRBEj9p73viVwNesf3JZNGVwxygoPs7iLYNMXQ76Jot",
+    "ok": true,
+    "computeUnits": 736919,
+    "txBytes": 1112
+  },
+  "rootAfterTx2": true,
+  "balances": {
+    "seller": "260000",
+    "relayer": "40000",
+    "vault": "4200000"
+  },
+  "expected": {
+    "seller": "260000",
+    "relayer": "40000",
+    "vault": "4200000"
+  }
+}

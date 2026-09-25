@@ -221,6 +221,56 @@ Scénario : pool neuf, 4 dépôts (2 notes de l'agent, 2 d'autres utilisateurs),
 | Portefeuille de l'agent dans les transactions de paiement | ✅ **absent** |
 | Génération de la preuve côté agent | 1,3 à 1,7 s |
 
+## Join-split 2 → 2 : montants libres et rendu de monnaie — `joinsplit/`, `jspool/`, `joinsplit-test.js`
+
+**Note** : `C = H(H(nk, secret), montant)` ; **nullificateur** : `H(nk, C)`.
+
+**Circuit** (`joinsplit/src/main.nr`, ≈ 16 000 portes ACIR, 9 entrées publiques) :
+- appartenance à l'arbre de chaque entrée de montant > 0 (une entrée de montant 0 est fictive) ;
+- nullificateurs corrects et distincts ;
+- engagements de sortie corrects ;
+- **conservation** `entrées = sorties + withdraw + fee` ;
+- montants en `u64`, donc pas de montant négatif ni de débordement ;
+- liaison de `recipient`, `relayer` et `fee`.
+
+Tests Noir : partage avec note fictive ✅, création de monnaie refusée ✅, fausse note refusée ✅.
+
+**Programme** (`jspool`, `H9YGaz5zPS1LXAjhDFnpj88UQGYbDoy64UQJtXBVnzno` sur devnet) :
+- `deposit(inner, montant)` calcule `C = H(inner, montant)` **on-chain** : une note ne peut pas
+  valoir plus que ce qui a été déposé ;
+- `transact` vérifie :
+  - que la racine est connue ;
+  - que le destinataire et le relayeur payés sont ceux de la preuve ;
+  - la preuve elle-même ;
+- `transact` crée ensuite 2 nullificateurs compressés Light dans un seul appel, insère les 2
+  engagements de sortie et paie `withdraw` au destinataire et `fee` au relayeur.
+
+### Résultats sur Solana devnet (25 septembre 2026) — `results-joinsplit-devnet.json`
+
+Dépôts : 1,00 (autre utilisateur), **A = 1,00** et **B = 0,50** (agent), 2,00 (autre utilisateur).
+
+| Opération | Résultat |
+|---|---|
+| Racine on-chain = racine hors chaîne (après les dépôts, Tx1, Tx2) | ✅ 3/3 |
+| **Tx1 : paiement avec monnaie**. A (1,00) → 0,23 au vendeur + 0,02 de frais + note C de monnaie (0,75) + note vide | ✅ **736 847 CU**, 1 112 o ([transaction](https://explorer.solana.com/tx/5Ko2grDJM9cbpdSSoPV1aqqy6Te8DZSxmz5j5g69MVo8EqtZpPj5ZqrtEMWZdfSoUXn2A2ZMhaWFNTHJLAXCu8HN?cluster=devnet)) |
+| Rejeu exact de Tx1 (double dépense) | ✅ refusé on-chain (Light 0x3779) |
+| Nouvelle preuve qui re-dépense A | ✅ refusée par l'indexeur (« address already exists ») |
+| Montant retiré gonflé (entrée publique modifiée) | ✅ refusé (« Preuve invalide ») |
+| **Tx2 : fusion + paiement**. B (0,50) + C (0,75) → 0,03 au vendeur + 0,02 de frais + D (1,00) + E (0,20) | ✅ 736 919 CU, 1 112 o |
+| Soldes | vendeur **0,26**, relayeur **0,04**, coffre **4,20** = attendus exactement |
+
+**Coûts**
+- Preuve join-split : **388 octets**. Les contrôles de plage `u64` ajoutent un engagement
+  BSB22 gnark de +64 o.
+- Génération de la preuve sur serveur : **≈ 1,2 s**, plus l'exécution Noir.
+- Vérification on-chain : **≈ 736 000 CU sur 1 400 000**. C'est deux fois la version à coupure
+  fixe : 9 entrées publiques, l'engagement BSB22, 2 nullificateurs, 2 insertions dans l'arbre.
+
+**Reste à faire**
+- **Remise des notes de sortie à leur destinataire** : il faut chiffrer `(nk, secret, montant)`
+  pour lui ; aujourd'hui seul le créateur de la note la connaît.
+- **Relayeur et x402** : les adapter au format join-split.
+
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
 Premier essai : une preuve valide restait **acceptée avec `recipient`, `relayer` ou `fee`

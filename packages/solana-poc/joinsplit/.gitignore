@@ -1,0 +1,6 @@
+Prover_*.toml
+target/runs/
+target/*.gz
+target/*.pk
+target/*.ccs
+target/*.json
