@@ -218,6 +218,6 @@ async function main() {
     fills, expected, correct: fills.every((f, i) => f === expected[i]),
   });
   console.log(JSON.stringify(log, null, 2));
-  fs.writeFileSync(path.join(__dirname, `../deployments/latency-twospeed-n${N}${process.env.HOLD_APPLY === "1" ? "-hold" : ""}.json`), JSON.stringify(log, null, 2) + "\n");
+  fs.writeFileSync(path.join(__dirname, `../deployments/latency-twospeed-n${N}${process.env.HOLD_APPLY === "1" ? "-hold" : "-grace"}.json`), JSON.stringify(log, null, 2) + "\n");
 }
 main().catch((e) => { console.error(e); process.exit(1); });
