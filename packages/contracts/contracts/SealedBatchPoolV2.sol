@@ -100,21 +100,30 @@ contract SealedBatchPoolV2 {
     /// @notice Prochain lot à régler (les lots se règlent strictement dans l'ordre).
     uint256 public nextToSettle;
 
+    /// @dev Règlement en phases (P3) : Eff (quantités effectives, O(N)), Up / Down (scan de
+    ///      Blelloch des sommes préfixes par sens, profondeur O(log N)), Fills (exécutions,
+    ///      toutes INDÉPENDANTES les unes des autres). Résultat identique au FIFO séquentiel :
+    ///      reste_i = max(0, M − Σ_{j<i, même sens} eff_j).
     enum Phase {
         Idle,
-        Totals,
+        Eff,
+        Up,
+        Down,
         Fills
     }
     Phase public phase;
     uint256 public cursor;
+    /// @notice Niveau courant du scan et taille paddée (puissance de 2 ≥ nombre d'ordres).
+    uint256 public scanLevel;
+    uint256 public scanSize;
     uint64 public settlementPrice;
     euint64 private _price;
     euint64 private _zero;
     euint64 private _maxQty;
-    euint64 private _totalBuy;
-    euint64 private _totalSell;
-    euint64 private _remBuy;
-    euint64 private _remSell;
+    euint64 private _matched;
+    /// @dev Tableaux du scan : parts acheteuses / vendeuses, puis préfixes exclusifs par sens.
+    euint64[] private _sb;
+    euint64[] private _ss;
 
     // ------------------------------------------------------------------ événements / erreurs
     event OrderSubmitted(uint256 indexed batchId, address indexed trader, uint256 index);
@@ -316,6 +325,19 @@ contract SealedBatchPoolV2 {
         _submit(FHE.asEbool(encIsBuy, proofSide), FHE.asEuint64(encQty, proofQty));
     }
 
+    /// @notice Variante à preuve UNIQUE (P3) : les deux chiffrés (sens, quantité) sont vérifiés
+    ///         ensemble avec une seule signature du vérifieur (une seule preuve côté client).
+    function submitOrderBatched(externalEbool encIsBuy, externalEuint64 encQty, bytes calldata signature)
+        external
+        payable
+    {
+        UnsignedEncryptedInput[] memory inputs = new UnsignedEncryptedInput[](2);
+        inputs[0] = UnsignedEncryptedInput(uint256(externalEbool.unwrap(encIsBuy)), 0, Utils.EBOOL_TFHE);
+        inputs[1] = UnsignedEncryptedInput(uint256(externalEuint64.unwrap(encQty)), 0, Utils.EUINT64_TFHE);
+        bytes32[] memory h = Impl.verifyBatchInputs(inputs, signature);
+        _submit(ebool.wrap(h[0]), euint64.wrap(h[1]));
+    }
+
     function _submit(ebool isBuy, euint64 qty) internal {
         if (!hasAccount[msg.sender]) revert NoAccount();
         if (msg.value != submitFee) revert BadFeeValue();
@@ -478,13 +500,16 @@ contract SealedBatchPoolV2 {
             return false;
         }
 
-        phase = Phase.Totals;
+        phase = Phase.Eff;
         cursor = 0;
         settlementPrice = p;
         _price = FHE.asEuint64(p);
         FHE.allowThis(_price);
-        _totalBuy = _zero;
-        _totalSell = _zero;
+        uint256 size = 1;
+        while (size < _orders[k].length) size <<= 1;
+        scanSize = size;
+        delete _sb;
+        delete _ss;
         emit SettlementStarted(k, p, _orders[k].length, cl8, py8, a8);
         return true;
     }
@@ -496,56 +521,127 @@ contract SealedBatchPoolV2 {
         }
     }
 
-    /// @notice Fait progresser le règlement en cours d'au plus `maxOrders` ordres.
+    /// @notice Fait progresser le règlement en cours d'au plus `maxItems` unités de travail
+    ///         (un ordre en phases Eff et Fills, un bloc du scan en phases Up et Down).
     ///         N'importe qui peut l'appeler. Renvoie true quand le lot est réglé.
-    function settleStep(uint256 maxOrders) external returns (bool done) {
+    function settleStep(uint256 maxItems) external returns (bool done) {
         if (phase == Phase.Idle) revert NoSettlementInProgress();
         uint256 k = nextToSettle;
         Order[] storage orders = _orders[k];
         uint256 n = orders.length;
-        uint256 end = cursor + maxOrders;
-        if (end > n) end = n;
+        uint256 size = scanSize;
+        uint256 budget = maxItems;
 
-        if (phase == Phase.Totals) {
-            for (uint256 i = cursor; i < end; i++) _accumulate(orders[i]);
-            cursor = end;
-            FHE.allowThis(_totalBuy);
-            FHE.allowThis(_totalSell);
-            if (cursor == n) {
-                euint64 matched = FHE.min(_totalBuy, _totalSell);
-                _remBuy = matched;
-                _remSell = matched;
-                FHE.allowThis(_remBuy);
-                FHE.allowThis(_remSell);
-                phase = Phase.Fills;
+        while (budget > 0) {
+            if (phase == Phase.Eff) {
+                if (cursor < n) {
+                    _effective(orders[cursor]);
+                    cursor++;
+                    budget--;
+                    continue;
+                }
+                // Padding jusqu'à une puissance de 2 (valeurs nulles).
+                while (_sb.length < size) {
+                    _sb.push(_zero);
+                    _ss.push(_zero);
+                }
+                phase = size > 1 ? Phase.Up : Phase.Down;
+                scanLevel = 0;
                 cursor = 0;
+                if (size == 1) _finishUpSweep(size);
+            } else if (phase == Phase.Up) {
+                uint256 stride = 2 << scanLevel;
+                uint256 half = 1 << scanLevel;
+                uint256 i2 = cursor * stride + stride - 1;
+                uint256 i1 = i2 - half;
+                _sb[i2] = _allowed(FHE.add(_sb[i2], _sb[i1]));
+                _ss[i2] = _allowed(FHE.add(_ss[i2], _ss[i1]));
+                budget--;
+                cursor++;
+                if (cursor * stride >= size) {
+                    cursor = 0;
+                    if (stride == size) {
+                        _finishUpSweep(size);
+                        phase = Phase.Down;
+                    } else {
+                        scanLevel++;
+                    }
+                }
+            } else if (phase == Phase.Down) {
+                if (size == 1) {
+                    phase = Phase.Fills;
+                    cursor = 0;
+                    continue;
+                }
+                uint256 stride = 2 << scanLevel;
+                uint256 half = 1 << scanLevel;
+                uint256 i2 = cursor * stride + stride - 1;
+                uint256 i1 = i2 - half;
+                (euint64 tb, euint64 ts) = (_sb[i1], _ss[i1]);
+                _sb[i1] = _sb[i2];
+                _ss[i1] = _ss[i2];
+                _sb[i2] = _allowed(FHE.add(tb, _sb[i2]));
+                _ss[i2] = _allowed(FHE.add(ts, _ss[i2]));
+                budget--;
+                cursor++;
+                if (cursor * stride >= size) {
+                    cursor = 0;
+                    if (scanLevel == 0) phase = Phase.Fills;
+                    else scanLevel--;
+                }
+            } else {
+                // Phase.Fills
+                if (cursor < n) {
+                    _fillScan(orders[cursor], cursor);
+                    cursor++;
+                    budget--;
+                    continue;
+                }
+                return _closeBatch(k);
             }
-            return false;
-        }
-
-        for (uint256 i = cursor; i < end; i++) _fill(orders[i]);
-        cursor = end;
-        FHE.allowThis(_remBuy);
-        FHE.allowThis(_remSell);
-        if (cursor == n) {
-            delete _orders[k];
-            phase = Phase.Idle;
-            cursor = 0;
-            nextToSettle = k + 1;
-            uint256 fees = batchFees[k];
-            batchFees[k] = 0;
-            emit BatchSettled(k);
-            if (fees > 0) {
-                (bool okPay,) = msg.sender.call{value: fees}("");
-                if (!okPay) revert RefundFailed();
-                emit KeeperPaid(k, msg.sender, fees);
-            }
-            return true;
         }
         return false;
     }
 
-    function _accumulate(Order storage o) internal {
+    /// @dev Fin de la remontée : racines = totaux par sens ; M = min ; racines remises à zéro
+    ///      (début de la redescente → préfixes EXCLUSIFS). Niveau de départ de la redescente.
+    function _finishUpSweep(uint256 size) internal {
+        _matched = FHE.min(_sb[size - 1], _ss[size - 1]);
+        FHE.allowThis(_matched);
+        _sb[size - 1] = _zero;
+        _ss[size - 1] = _zero;
+        uint256 lvl = 0;
+        while ((2 << lvl) < size) lvl++;
+        scanLevel = lvl;
+        cursor = 0;
+    }
+
+    function _closeBatch(uint256 k) internal returns (bool) {
+        delete _orders[k];
+        delete _sb;
+        delete _ss;
+        phase = Phase.Idle;
+        cursor = 0;
+        nextToSettle = k + 1;
+        uint256 fees = batchFees[k];
+        batchFees[k] = 0;
+        emit BatchSettled(k);
+        if (fees > 0) {
+            (bool okPay,) = msg.sender.call{value: fees}("");
+            if (!okPay) revert RefundFailed();
+            emit KeeperPaid(k, msg.sender, fees);
+        }
+        return true;
+    }
+
+    function _allowed(euint64 v) internal returns (euint64) {
+        FHE.allowThis(v);
+        return v;
+    }
+
+    /// @dev Phase Eff : quantité effective (couverture exacte, bornes anti-rebouclage) et parts
+    ///      par sens. Aucune dépendance entre ordres.
+    function _effective(Order storage o) internal {
         euint64 need = FHE.mul(o.qty, _price);
         ebool okBuy = FHE.gte(_quote[o.trader], need);
         ebool okSell = FHE.gte(_base[o.trader], o.qty);
@@ -553,19 +649,20 @@ contract SealedBatchPoolV2 {
         euint64 eff = FHE.select(ok, o.qty, _zero);
         euint64 buyPart = FHE.select(o.isBuy, eff, _zero);
         euint64 sellPart = FHE.sub(eff, buyPart);
-        _totalBuy = FHE.add(_totalBuy, buyPart);
-        _totalSell = FHE.add(_totalSell, sellPart);
         o.eff = eff;
         FHE.allowThis(eff);
+        _sb.push(_allowed(buyPart));
+        _ss.push(_allowed(sellPart));
     }
 
-    function _fill(Order storage o) internal {
-        euint64 rem = FHE.select(o.isBuy, _remBuy, _remSell);
+    /// @dev Phase Fills : reste = max(0, M − préfixe exclusif du même sens) ; exécution =
+    ///      min(eff, reste). Aucune dépendance entre ordres (parallélisable par le coprocesseur).
+    function _fillScan(Order storage o, uint256 i) internal {
+        euint64 prefix = FHE.select(o.isBuy, _sb[i], _ss[i]);
+        euint64 rem = FHE.select(FHE.gte(_matched, prefix), FHE.sub(_matched, prefix), _zero);
         euint64 fill = FHE.min(o.eff, rem);
         euint64 fb = FHE.select(o.isBuy, fill, _zero);
         euint64 fs = FHE.sub(fill, fb);
-        _remBuy = FHE.sub(_remBuy, fb);
-        _remSell = FHE.sub(_remSell, fs);
 
         euint64 cost = FHE.mul(fill, _price);
         euint64 qb = FHE.select(o.isBuy, cost, _zero);

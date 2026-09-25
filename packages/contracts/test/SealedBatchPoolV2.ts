@@ -266,6 +266,25 @@ describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle 2 sur 3 à
     await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(attacker.address), FQ);
   });
 
+  it("P3 : soumission à preuve unique (sens + quantité vérifiés ensemble)", async function () {
+    const o = await loadFixture(deployFixture);
+    const [a, b] = [o.signers[1], o.signers[2]];
+    await o.pool.connect(a).claimFaucet();
+    await o.pool.connect(b).claimFaucet();
+    for (const [w, isBuy] of [[a, true], [b, false]] as const) {
+      const c = await hre.cofhe.createClientWithBatteries(w);
+      const res = (await c.encryptInputs([Encryptable.bool(isBuy), Encryptable.uint64(9n)]).setConsumingContract(o.poolAddress).execute()) as any[];
+      expect(res.length).to.equal(3); // deux handles puis une signature commune
+      await o.pool.connect(w).submitOrderBatched(res[0], res[1], res[2]);
+    }
+    await refreshOracles(o);
+    await closeBatch(o.pool, 0n);
+    await start(o.pool, o);
+    await settleAll(o.pool, o.signers[3]);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.lastFillOf(a.address), 9n);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.lastFillOf(b.address), 9n);
+  });
+
   it("rejette des paramètres de construction dangereux", async function () {
     const o = await loadFixture(deployFixture);
     const f = await hre.ethers.getContractFactory("SealedBatchPoolV2");
@@ -320,6 +339,28 @@ describe("SealedBatchPoolV2 — propriétés (lots aléatoires vs modèle de ré
       return s / 2 ** 32;
     };
   }
+
+  it("grand lot de 19 ordres (taille non puissance de 2), réglé par pas de 3 : conforme au modèle FIFO", async function () {
+    const o = await loadFixture(deployFixture);
+    const { pool, poolAddress, signers } = o;
+    const r = rng(4242);
+    const traders = signers.slice(1, 20);
+    const accs: Acc[] = [];
+    for (const t of traders) { await pool.connect(t).claimFaucet(); accs.push({ base: FB, quote: FQ }); }
+    const orders = traders.map((_, i) => ({ t: i, buy: r() < 0.5, q: BigInt(1 + Math.floor(r() * (r() < 0.15 ? 20_000 : 900))) }));
+    for (const x of orders) await submit(pool, poolAddress, traders[x.t], x.buy, x.q);
+    await refreshOracles(o);
+    await closeBatch(pool, 0n);
+    await start(pool, o, signers[25]);
+    expect(await pool.scanSize()).to.equal(32n);
+    await settleAll(pool, signers[26], 3);
+    const fills = referenceBatch(accs, orders, POOL_PRICE);
+    for (let i = 0; i < orders.length; i++) {
+      await hre.cofhe.mocks.expectPlaintext(await pool.lastFillOf(traders[i].address), fills[i]);
+      await hre.cofhe.mocks.expectPlaintext(await pool.baseBalanceOf(traders[i].address), accs[i].base);
+      await hre.cofhe.mocks.expectPlaintext(await pool.quoteBalanceOf(traders[i].address), accs[i].quote);
+    }
+  });
 
   for (let run = 0; run < RUNS; run++) {
     const seed = 1000 + run;
