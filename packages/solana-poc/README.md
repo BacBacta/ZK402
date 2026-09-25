@@ -188,6 +188,39 @@ le relayeur devra demander un supplément dans ce cas, ou exiger un compte exist
 Limites (test) : pas de limitation de débit, pas de file d'attente ; l'adresse IP de
 l'utilisateur est visible du relayeur (passer par Tor ou un relais réseau).
 
+## Branchement x402 : schéma « shielded-note » — `x402.js`, `x402-test.js`
+
+Un agent paie une API HTTP avec une note du pool, selon le déroulé x402 : le vendeur répond
+**402** avec ses exigences (`accepts[]` : `scheme`, `network`, `asset`, `payTo`, `amount`,
+`extra` = programme, pool, coupure, frais, compte du facilitateur) ; l'agent rejoue la requête
+avec `X-PAYMENT` = base64(JSON `{ x402Version, scheme, network, payload }`) où `payload` contient
+la preuve et le témoin public, **sans signature ni adresse de l'agent** ; le vendeur appelle le
+facilitateur (`/verify` : contrôles + simulation, rien n'est payé ; puis `/settle` : envoi) et
+sert la ressource avec `X-PAYMENT-RESPONSE`. Le facilitateur est le relayeur : il paie les frais
+Solana et touche les frais prouvés.
+
+La preuve est liée au vendeur (`recipient` = compte de jetons de `payTo`) et au facilitateur
+(`relayer`, `fee`) : un paiement fait pour un vendeur ne peut pas être encaissé par un autre.
+Le schéma « shielded-note » est propre à ce prototype ; la forme des messages suit x402.
+
+**Limite** : une note paie un montant fixe (coupure − frais). Des montants libres avec rendu de
+monnaie exigent un circuit « join-split » (2 notes en entrée, 2 en sortie).
+
+### Résultats sur Solana devnet (25 septembre 2026) — `results-x402-devnet.json`
+
+Scénario : pool neuf, 4 dépôts (2 notes de l'agent, 2 d'autres utilisateurs), deux vendeurs
+(A : `/weather`, B : `/price`) dont les adresses n'ont jamais eu de SOL, un facilitateur.
+
+| Étape | Résultat |
+|---|---|
+| Agent → A, payé avec la note 1 | ✅ **200** `{"city":"Paris","tempC":17}` + `X-PAYMENT-RESPONSE` ([transaction](https://explorer.solana.com/tx/4u8gSVan3S4MZfE3xj9ZjLu1X12wx3K1G3UmqkSeHogZo9TEzzYzCe3hsTMzNXGwAG73GM5118Q48s1U3DCuY8ze?cluster=devnet)) |
+| Rejeu du même `X-PAYMENT` → A | ✅ **402** « nullificateur déjà utilisé » |
+| Paiement construit pour B, présenté à A | ✅ **402** « le paiement ne va pas au vendeur » — et la note n'est **pas** brûlée |
+| Ce même paiement → B | ✅ **200** `{"pair":"SOL/USD","price":116}` ([transaction](https://explorer.solana.com/tx/4APuuLYd5DcDEEgXovXyKAuWhJevcWXngeksZNt5FKkWwKw1HDuKPtkVaJd6qhzsiXquAynQGiYSiykqkPwS5kqt?cluster=devnet)) |
+| Soldes | A : 0,98 ; B : 0,98 ; facilitateur : 0,04 |
+| Portefeuille de l'agent dans les transactions de paiement | ✅ **absent** |
+| Génération de la preuve côté agent | 1,3 à 1,7 s |
+
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
 Premier essai : une preuve valide restait **acceptée avec `recipient`, `relayer` ou `fee`

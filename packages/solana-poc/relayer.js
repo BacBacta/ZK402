@@ -19,7 +19,7 @@ const pkField = (pk) => { const b = Buffer.from(pk.toBytes()); b[0] = 0; return 
 const PW_HEADER = 12, NR_INPUTS = 5;
 const input = (pw, i) => pw.subarray(PW_HEADER + i * 32, PW_HEADER + (i + 1) * 32);
 
-function createRelayer({ rpc, local, keypair, programId, mint, pool, vault, minFee }) {
+function createRelayer({ rpc, local, keypair, programId, mint, pool, vault, minFee, denomination }) {
   const relayerToken = spl.getAssociatedTokenAddressSync(mint, keypair.publicKey);
   let lut = null;
 
@@ -62,7 +62,9 @@ function createRelayer({ rpc, local, keypair, programId, mint, pool, vault, minF
     await ensureLut([...new Map(statics.map((k) => [k.toBase58(), k])).values()]);
   }
 
-  async function relay({ proof, publicWitness, recipientOwner }) {
+  /** Vérifie une demande et construit + simule la transaction, SANS l'envoyer.
+   *  `expect` (optionnel, x402) : { recipientOwner, amount } exigés par le vendeur. */
+  async function prepare({ proof, publicWitness, recipientOwner }, expect) {
     const pr = Buffer.from(proof, "base64");
     const pw = Buffer.from(publicWitness, "base64");
     if (pw.length !== PW_HEADER + NR_INPUTS * 32) return { status: 400, error: "témoin public mal formé" };
@@ -76,6 +78,10 @@ function createRelayer({ rpc, local, keypair, programId, mint, pool, vault, minF
     // (2) destinataire : ATA dérivé du propriétaire, doit être celui de la preuve
     const recipientToken = spl.getAssociatedTokenAddressSync(mint, owner);
     if (!input(pw, 2).equals(pkField(recipientToken))) return { status: 400, error: "destinataire ≠ destinataire prouvé" };
+    if (expect) {
+      if (expect.recipientOwner !== owner.toBase58()) return { status: 400, error: "le paiement ne va pas au vendeur" };
+      if (denomination === undefined || BigInt(expect.amount) !== denomination - fee) return { status: 400, error: `montant ${denomination - fee} ≠ prix ${expect.amount}` };
+    }
     // (3) preuve de non-existence du nullificateur (échoue si déjà dépensé)
     let light;
     try { light = await lightData(Buffer.from(input(pw, 1))); }
@@ -98,6 +104,13 @@ function createRelayer({ rpc, local, keypair, programId, mint, pool, vault, minF
       const why = (sim.value.logs || []).find((l) => l.includes("Error Message")) || JSON.stringify(sim.value.err);
       return { status: 422, error: `simulation refusée : ${why.slice(0, 160)}` };
     }
+    return { status: 200, tx, blockhash, lastValidBlockHeight, sim, recipientToken, amount: denomination === undefined ? null : denomination - fee, fee };
+  }
+
+  async function relay(body, expect) {
+    const p = await prepare(body, expect);
+    if (p.status !== 200) return p;
+    const { tx, blockhash, lastValidBlockHeight, sim, recipientToken } = p;
     // (5) envoi
     const sig = await rpc.sendRawTransaction(tx.serialize(), { skipPreflight: true });
     const conf = await rpc.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
@@ -122,7 +135,7 @@ function createRelayer({ rpc, local, keypair, programId, mint, pool, vault, minF
     return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve(server)));
   }
 
-  return { init, relay, listen, relayerToken };
+  return { init, prepare, relay, listen, relayerToken };
 }
 
 module.exports = { createRelayer };

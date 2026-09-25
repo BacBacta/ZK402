@@ -1,0 +1,96 @@
+{
+  "date": "2026-09-25T13:15:03.835Z",
+  "rpc": "https://devnet.helius-rpc.com/?api-key=…",
+  "network": "solana-devnet",
+  "program": "DMBrPRJ7H5hPaJ14T5sVfKQavD71PrkmXFiRDh32S2V8",
+  "scheme": "shielded-note",
+  "payA": {
+    "status": 200,
+    "body": {
+      "city": "Paris",
+      "tempC": 17
+    },
+    "paymentResponse": {
+      "success": true,
+      "transaction": "4u8gSVan3S4MZfE3xj9ZjLu1X12wx3K1G3UmqkSeHogZo9TEzzYzCe3hsTMzNXGwAG73GM5118Q48s1U3DCuY8ze",
+      "network": "solana-devnet",
+      "payer": "shielded",
+      "computeUnits": 378057
+    },
+    "totalMs": 4301
+  },
+  "replayA": {
+    "status": 402,
+    "body": {
+      "x402Version": 2,
+      "error": "paiement refusé : nullificateur déjà utilisé ou indexeur indisponible",
+      "accepts": [
+        {
+          "scheme": "shielded-note",
+          "network": "solana-devnet",
+          "asset": "47MTfHyYAeExP1YiDssGeKpGnL4bQqqjHgKuh9Teyqog",
+          "payTo": "7Qn7hBTePwdSCxAHSxm8gqENj2JoRao3mypyAdspXRRj",
+          "amount": "980000",
+          "resource": "/weather",
+          "description": "donnée payante",
+          "maxTimeoutSeconds": 60,
+          "extra": {
+            "program": "DMBrPRJ7H5hPaJ14T5sVfKQavD71PrkmXFiRDh32S2V8",
+            "pool": "9KP5mufLC8d5yerrZm3gqFiy6oc9aiCojXmAeByccaTU",
+            "denomination": "1000000",
+            "fee": "20000",
+            "feeRecipient": "9F84ZrNBnGSPJm5DfRHhuornBYCSU4fUPyLGdVmZy7y7"
+          }
+        }
+      ]
+    },
+    "paymentResponse": null
+  },
+  "wrongSeller": {
+    "status": 402,
+    "body": {
+      "x402Version": 2,
+      "error": "paiement refusé : le paiement ne va pas au vendeur",
+      "accepts": [
+        {
+          "scheme": "shielded-note",
+          "network": "solana-devnet",
+          "asset": "47MTfHyYAeExP1YiDssGeKpGnL4bQqqjHgKuh9Teyqog",
+          "payTo": "7Qn7hBTePwdSCxAHSxm8gqENj2JoRao3mypyAdspXRRj",
+          "amount": "980000",
+          "resource": "/weather",
+          "description": "donnée payante",
+          "maxTimeoutSeconds": 60,
+          "extra": {
+            "program": "DMBrPRJ7H5hPaJ14T5sVfKQavD71PrkmXFiRDh32S2V8",
+            "pool": "9KP5mufLC8d5yerrZm3gqFiy6oc9aiCojXmAeByccaTU",
+            "denomination": "1000000",
+            "fee": "20000",
+            "feeRecipient": "9F84ZrNBnGSPJm5DfRHhuornBYCSU4fUPyLGdVmZy7y7"
+          }
+        }
+      ]
+    },
+    "paymentResponse": null
+  },
+  "payB": {
+    "status": 200,
+    "body": {
+      "pair": "SOL/USD",
+      "price": 116
+    },
+    "paymentResponse": {
+      "success": true,
+      "transaction": "4APuuLYd5DcDEEgXovXyKAuWhJevcWXngeksZNt5FKkWwKw1HDuKPtkVaJd6qhzsiXquAynQGiYSiykqkPwS5kqt",
+      "network": "solana-devnet",
+      "payer": "shielded",
+      "computeUnits": 378057
+    }
+  },
+  "balances": {
+    "sellerA": "980000",
+    "sellerB": "980000",
+    "facilitator": "40000"
+  },
+  "agentInPaymentTxs": false
+}
