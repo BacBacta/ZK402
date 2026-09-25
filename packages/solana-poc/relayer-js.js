@@ -18,7 +18,7 @@ const IN = { root: 0, null0: 1, null1: 2, out0: 3, out1: 4, withdraw: 5, fee: 6,
 const input = (pw, i) => pw.subarray(PW_HEADER + i * 32, PW_HEADER + (i + 1) * 32);
 const big = (b) => BigInt("0x" + Buffer.from(b).toString("hex"));
 
-function createJoinSplitRelayer({ rpc, local, keypair, programId, mint, pool, vault, minFee }) {
+function createJoinSplitRelayer({ rpc, local, keypair, programId, mint, pool, vault, minFee, denylist = new Set() }) {
   const relayerToken = spl.getAssociatedTokenAddressSync(mint, keypair.publicKey);
   let lut = null;
 
@@ -61,6 +61,8 @@ function createJoinSplitRelayer({ rpc, local, keypair, programId, mint, pool, va
     if (pr.length > 1024) return { status: 400, error: "preuve trop longue" };
     let owner;
     try { owner = new web3.PublicKey(recipientOwner); } catch { return { status: 400, error: "destinataire invalide" }; }
+    // Conformité : pas de paiement vers une adresse sanctionnée (liste fournie au facilitateur).
+    if (denylist.has(owner.toBase58())) return { status: 451, error: "destinataire sur liste de sanctions" };
     if (!input(pw, IN.relayer).equals(pkField(relayerToken))) return { status: 400, error: "la preuve ne désigne pas ce relayeur" };
     const fee = big(input(pw, IN.fee)), withdraw = big(input(pw, IN.withdraw));
     if (fee < minFee) return { status: 400, error: `frais ${fee} < minimum ${minFee}` };

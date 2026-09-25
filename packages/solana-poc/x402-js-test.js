@@ -36,7 +36,7 @@ const sendTx = (ixs, signers) => web3.sendAndConfirmTransaction(rpc, new web3.Tr
   const mint = await spl.createMint(rpc, funder, funder.publicKey, null, 6);
   const [pool] = web3.PublicKey.findProgramAddressSync([Buffer.from("pool"), mint.toBuffer()], PROGRAM_ID);
   const vault = await spl.createAccount(rpc, funder, mint, pool, web3.Keypair.generate());
-  await sendTx([new web3.TransactionInstruction({ programId: PROGRAM_ID, data: disc("initialize"), keys: [
+  await sendTx([new web3.TransactionInstruction({ programId: PROGRAM_ID, data: Buffer.concat([disc("initialize"), funder.publicKey.toBuffer()]), keys: [ // contrôleur = funder (test)
     { pubkey: funder.publicKey, isSigner: true, isWritable: true }, { pubkey: mint, isSigner: false, isWritable: false },
     { pubkey: pool, isSigner: false, isWritable: true }, { pubkey: vault, isSigner: false, isWritable: false },
     { pubkey: web3.SystemProgram.programId, isSigner: false, isWritable: false }] })], [funder]);
@@ -51,9 +51,9 @@ const sendTx = (ixs, signers) => web3.sendAndConfirmTransaction(rpc, new web3.Tr
   const opts = { rpc, programId: PROGRAM_ID, pool, vault, mint, circuitDir: path.join(__dirname, "joinsplit"),
     nargo: process.env.NARGO || `${SCRATCH}/nargo22/nargo`, sunspot: process.env.SUNSPOT || `${SCRATCH}/sunspot-bin` };
   const others = new ShieldedWallet({ ...opts, name: "autres" }), wallet = new ShieldedWallet({ ...opts, name: "agent" });
-  await sendTx([others.depositIx(funder.publicKey, funderAta, 2n * UNIT)], [funder]);
-  await sendTx([wallet.depositIx(agent.publicKey, agentAta, UNIT)], [agent]); // l'agent dépose 1,00 une fois
-  await sendTx([others.depositIx(funder.publicKey, funderAta, 700_000n)], [funder]);
+  await sendTx([others.depositIx(funder.publicKey, funder.publicKey, funderAta, 2n * UNIT)], [funder]);
+  await sendTx([wallet.depositIx(agent.publicKey, funder.publicKey, agentAta, UNIT)], [agent, funder]); // l'agent dépose 1,00 une fois
+  await sendTx([others.depositIx(funder.publicKey, funder.publicKey, funderAta, 700_000n)], [funder]);
   const s0 = await wallet.sync();
   out.afterDeposits = { leaves: s0.leaves, agentPrivateBalance: String(wallet.balance()) };
   console.log(`dépôts synchronisés depuis les événements : ${s0.leaves} feuilles, racine OK ; solde privé agent ${wallet.balance()}`);

@@ -33,7 +33,7 @@ const s = (x) => String(x);
   const mint = await spl.createMint(rpc, funder, funder.publicKey, null, 6);
   const [pool] = web3.PublicKey.findProgramAddressSync([Buffer.from("pool"), mint.toBuffer()], PROGRAM_ID);
   const vault = await spl.createAccount(rpc, funder, mint, pool, web3.Keypair.generate());
-  await sendTx([new web3.TransactionInstruction({ programId: PROGRAM_ID, data: disc("initialize"), keys: [
+  await sendTx([new web3.TransactionInstruction({ programId: PROGRAM_ID, data: Buffer.concat([disc("initialize"), funder.publicKey.toBuffer()]), keys: [ // contrôleur = funder (test)
     { pubkey: funder.publicKey, isSigner: true, isWritable: true }, { pubkey: mint, isSigner: false, isWritable: false },
     { pubkey: pool, isSigner: false, isWritable: true }, { pubkey: vault, isSigner: false, isWritable: false },
     { pubkey: web3.SystemProgram.programId, isSigner: false, isWritable: false }] })], [funder]);
@@ -48,9 +48,9 @@ const s = (x) => String(x);
   const alice = new ShieldedWallet({ ...opts, name: "alice" }), bob = new ShieldedWallet({ ...opts, name: "bob" });
   const carol = new ShieldedWallet({ ...opts, name: "carol" }), others = new ShieldedWallet({ ...opts, name: "autres" });
   out.bobAddress = bob.address();
-  await sendTx([others.depositIx(funder.publicKey, funderAta, 2n * UNIT)], [funder]);
-  await sendTx([alice.depositIx(aliceKp.publicKey, aliceAta, UNIT)], [aliceKp]);
-  await sendTx([others.depositIx(funder.publicKey, funderAta, 500_000n)], [funder]);
+  await sendTx([others.depositIx(funder.publicKey, funder.publicKey, funderAta, 2n * UNIT)], [funder]);
+  await sendTx([alice.depositIx(aliceKp.publicKey, funder.publicKey, aliceAta, UNIT)], [aliceKp, funder]);
+  await sendTx([others.depositIx(funder.publicKey, funder.publicKey, funderAta, 500_000n)], [funder]);
 
   const relayer = createJoinSplitRelayer({ rpc, local: LOCAL, keypair: facKp, programId: PROGRAM_ID, mint, pool, vault, minFee: FEE });
   await relayer.init();
@@ -72,14 +72,14 @@ const s = (x) => String(x);
   // 3. Attaque : Alice (qui connaît pk_Bob, blinding et montant) tente de dépenser la note de Bob
   const bobNote = bob.spendable()[0];
   try {
-    alice.build([{ ...t.out, index: bobNote.index }], [alice.own({ ...t.out }), alice.own({ ...t.out })], 0n, FEE, relayer.relayerToken, relayer.relayerToken);
+    alice.build([{ ...t.out, index: bobNote.index }], () => [alice.own({ ...t.out }), alice.own({ ...t.out })], 0n, FEE, relayer.relayerToken, relayer.relayerToken);
     out.aliceSpendsBobNote = "PREUVE PRODUITE (anormal)";
   } catch (e) { out.aliceSpendsBobNote = `impossible : ${String(e.stderr || e.message).match(/note absente de l'arbre|nullificateur incorrect|Failed[^\n]*/)?.[0] ?? "échec du circuit"}`; }
   console.log("Alice tente de dépenser la note de Bob :", out.aliceSpendsBobNote);
 
   // 4. Attaque : message mensonger (note réelle de 0,01, message annonçant 5,00)
   const t2 = alice.transfer(bob.address(), 10_000n, FEE, relayerInfo);
-  t2.payload.memo = encryptNote(parseAddress(bob.address()).enc, 5n * UNIT).memo.toString("base64");
+  t2.payload.memo = Buffer.concat([encryptNote(parseAddress(bob.address()).enc, 5n * UNIT).part, Buffer.from(t2.payload.memo, "base64").subarray(40)]).toString("base64");
   const r2 = await relayer.relay(t2.payload);
   await bob.sync();
   out.lyingMemo = { status: r2.status, bobBalance: s(bob.balance()), rejectedMemos: bob.rejectedMemos };

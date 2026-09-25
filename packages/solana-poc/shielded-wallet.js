@@ -1,8 +1,16 @@
 // Portefeuille privé d'un agent pour le pool JOIN-SPLIT (notes v2 avec propriétaire).
 //
-// Clés : sk (dépense, secrète) et pk = H(sk, 0) ; paire X25519 pour recevoir des notes chiffrées.
-// Adresse privée : "zk402:" + hex(pk) + hex(clé publique X25519).
-// Note : C = H(H(pk, blinding), montant) ; nullificateur = H(sk, C).
+// Clés : sk (dépense, secrète), pk = H(sk, 0), nk = H(sk, 1) (clé de nullificateur), paire
+// X25519 de réception. Adresse privée : "zk402:" + hex(pk) + hex(clé publique X25519).
+// CLÉ DE CONSULTATION : "zk402view:" + hex(pk) + hex(nk) + hex(clé privée X25519) — permet à un
+// auditeur de reconstituer TOUT l'historique (dépôts, notes reçues, dépenses, monnaie, solde)
+// sans pouvoir dépenser (il lui manque sk).
+// Note : C = H(H(pk, blinding), montant) ; nullificateur = H(nk, C).
+// Blindings déterministes (retrouvables avec la clé de consultation) :
+//  - dépôt n° i : HKDF(nk, "deposit" || i) ;
+//  - monnaie rendue (toujours la sortie n° 1) : HKDF(nk, nullificateur d'entrée n° 0), et son
+//    montant est chiffré dans les 8 derniers octets du message joint ;
+//  - note pour autrui : dérivée du secret X25519 partagé (40 premiers octets du message).
 //
 // - sync() : reconstruit l'arbre depuis les ÉVÉNEMENTS on-chain (Deposited, Transacted),
 //   vérifie la racine, DÉCHIFFRE les messages joints aux transactions pour trouver les notes
@@ -28,37 +36,37 @@ const pkField = (pk) => { const b = Buffer.from(pk.toBytes()); b[0] = 0; return 
 const rand = () => toBig(crypto.randomBytes(31));
 const EV_DEP = disc("event", "Deposited"), EV_TX = disc("event", "Transacted");
 
-// --- Chiffrement des notes : X25519 éphémère + HKDF-SHA256 + ChaCha20-Poly1305.
-// Le blinding de la note n'est PAS transmis : émetteur et destinataire le dérivent du secret
-// partagé (HKDF). Seul le montant est chiffré.
-// Message = clé publique éphémère (32) || montant chiffré (8) || tag (16) = 56 octets.
+// --- Chiffrement (sans étiquette d'authentification : l'intégrité est assurée par le
+// recalcul de l'engagement, qui doit être celui publié dans la même transaction).
+// Message joint à `transact` : [part destinataire 40 o : clé éphémère X25519 32 + montant 8]
+// (paiement privé seulement) + [part monnaie 8 o : montant]. 48 o (transfert) ou 8 o (paiement).
 const SPKI_X25519 = Buffer.from("302a300506032b656e032100", "hex");
+const PKCS8_X25519 = Buffer.from("302e020100300506032b656e04220420", "hex");
 const rawPub = (k) => k.export({ format: "der", type: "spki" }).subarray(-32);
+const rawPriv = (k) => k.export({ format: "der", type: "pkcs8" }).subarray(-32);
 const pubFromRaw = (raw) => crypto.createPublicKey({ key: Buffer.concat([SPKI_X25519, raw]), format: "der", type: "spki" });
-function derive(shared, eph) {
-  const okm = Buffer.from(crypto.hkdfSync("sha256", shared, eph, "zk402-note-v2", 63));
-  return { key: okm.subarray(0, 32), blinding: toBig(okm.subarray(32, 63)) }; // 31 o < module du corps
+const privFromRaw = (raw) => crypto.createPrivateKey({ key: Buffer.concat([PKCS8_X25519, raw]), format: "der", type: "pkcs8" });
+function kdf(ikm, salt, info) {
+  const okm = Buffer.from(crypto.hkdfSync("sha256", ikm, salt, info, 39));
+  return { blinding: toBig(okm.subarray(0, 31)), ks: okm.subarray(31, 39) };
 }
-/** Chiffre le montant pour `recipientEncPub` ; renvoie le message et le blinding dérivé. */
+const xor8 = (a, b) => Buffer.from(a.map((x, i) => x ^ b[i]));
+const amt8 = (a) => be32(a).subarray(24);
+/** Part destinataire : renvoie { part (40 o), blinding }. */
 function encryptNote(recipientEncPub, amount) {
-  const eph = crypto.generateKeyPairSync("x25519");
-  const ephRaw = rawPub(eph.publicKey);
-  const { key, blinding } = derive(crypto.diffieHellman({ privateKey: eph.privateKey, publicKey: pubFromRaw(recipientEncPub) }), ephRaw);
-  const c = crypto.createCipheriv("chacha20-poly1305", key, Buffer.alloc(12), { authTagLength: 16 });
-  const ct = Buffer.concat([c.update(be32(amount).subarray(24)), c.final()]);
-  return { memo: Buffer.concat([ephRaw, ct, c.getAuthTag()]), blinding };
+  const eph = crypto.generateKeyPairSync("x25519"), ephRaw = rawPub(eph.publicKey);
+  const { blinding, ks } = kdf(crypto.diffieHellman({ privateKey: eph.privateKey, publicKey: pubFromRaw(recipientEncPub) }), ephRaw, "zk402-note-v3");
+  return { part: Buffer.concat([ephRaw, xor8(amt8(amount), ks)]), blinding };
 }
-function decryptNote(encPriv, memo) {
-  if (memo.length !== 56) return null;
+function decryptNote(encPriv, part) {
   try {
-    const eph = memo.subarray(0, 32);
-    const { key, blinding } = derive(crypto.diffieHellman({ privateKey: encPriv, publicKey: pubFromRaw(eph) }), eph);
-    const d = crypto.createDecipheriv("chacha20-poly1305", key, Buffer.alloc(12), { authTagLength: 16 });
-    d.setAuthTag(memo.subarray(40, 56));
-    const pt = Buffer.concat([d.update(memo.subarray(32, 40)), d.final()]);
-    return { amount: toBig(pt), blinding };
+    const eph = part.subarray(0, 32);
+    const { blinding, ks } = kdf(crypto.diffieHellman({ privateKey: encPriv, publicKey: pubFromRaw(eph) }), eph, "zk402-note-v3");
+    return { amount: toBig(xor8(part.subarray(32, 40), ks)), blinding };
   } catch { return null; }
 }
+const changeKdf = (nk, nul0) => kdf(be32(nk), be32(nul0), "zk402-change-v3");
+const depositKdf = (nk, i) => kdf(be32(nk), Buffer.from(`deposit:${i}`), "zk402-deposit-v3");
 
 const noteFor = (pk, amount, blinding = rand()) => { const inner = H([pk, blinding]); return { pk, blinding, amount: BigInt(amount), inner, c: H([inner, BigInt(amount)]) }; };
 function parseAddress(a) {
@@ -67,23 +75,32 @@ function parseAddress(a) {
 }
 
 class ShieldedWallet {
-  constructor({ rpc, programId, pool, vault, mint, circuitDir, nargo, sunspot, name }) {
+  /** `viewingKey` (optionnel) : mode AUDITEUR, lecture seule, sans clé de dépense. */
+  constructor({ rpc, programId, pool, vault, mint, circuitDir, nargo, sunspot, name, viewingKey }) {
     Object.assign(this, { rpc, programId, pool, vault, mint, circuitDir, nargo, sunspot, name: name || "wallet" });
-    this.sk = rand(); this.pk = H([this.sk, 0n]);
-    this.enc = crypto.generateKeyPairSync("x25519");
-    this.notes = []; this.leaves = []; this.proofs = 0; this.received = [];
+    if (viewingKey) {
+      if (!viewingKey.startsWith("zk402view:") || viewingKey.length !== 10 + 192) throw new Error("clé de consultation invalide");
+      this.sk = null; this.pk = toBig(Buffer.from(viewingKey.slice(10, 74), "hex")); this.nk = toBig(Buffer.from(viewingKey.slice(74, 138), "hex"));
+      const priv = privFromRaw(Buffer.from(viewingKey.slice(138), "hex"));
+      this.enc = { privateKey: priv, publicKey: crypto.createPublicKey(priv) };
+    } else {
+      this.sk = rand(); this.pk = H([this.sk, 0n]); this.nk = H([this.sk, 1n]);
+      this.enc = crypto.generateKeyPairSync("x25519");
+    }
+    this.notes = []; this.leaves = []; this.proofs = 0; this.received = []; this.deposits = 0; this.history = [];
   }
   address() { return "zk402:" + be32(this.pk).toString("hex") + rawPub(this.enc.publicKey).toString("hex"); }
-  own(n) { return { ...n, nullifier: H([this.sk, n.c]), index: null, spent: false }; }
+  viewingKey() { return "zk402view:" + be32(this.pk).toString("hex") + be32(this.nk).toString("hex") + rawPriv(this.enc.privateKey).toString("hex"); }
+  own(n) { return { ...n, nullifier: H([this.nk, n.c]), index: null, spent: false }; }
 
-  depositIx(depositor, depositorToken, amount, toAddress) {
-    const to = toAddress ? parseAddress(toAddress) : { pk: this.pk };
-    const n = noteFor(to.pk, amount);
-    if (!toAddress) this.notes.push(this.own(n));
+  depositIx(depositor, screener, depositorToken, amount) {
+    const { blinding } = depositKdf(this.nk, this.deposits++);
+    const n = this.own(noteFor(this.pk, amount, blinding));
+    this.notes.push(n);
     return new web3.TransactionInstruction({ programId: this.programId, data: Buffer.concat([disc("global", "deposit"), be32(n.inner), u64le(amount)]), keys: [
-      { pubkey: depositor, isSigner: true, isWritable: false }, { pubkey: this.pool, isSigner: false, isWritable: true },
-      { pubkey: this.vault, isSigner: false, isWritable: true }, { pubkey: depositorToken, isSigner: false, isWritable: true },
-      { pubkey: spl.TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }] });
+      { pubkey: depositor, isSigner: true, isWritable: false }, { pubkey: screener, isSigner: true, isWritable: false },
+      { pubkey: this.pool, isSigner: false, isWritable: true }, { pubkey: this.vault, isSigner: false, isWritable: true },
+      { pubkey: depositorToken, isSigner: false, isWritable: true }, { pubkey: spl.TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }] });
   }
 
   async sync() {
@@ -92,10 +109,12 @@ class ShieldedWallet {
       const page = await this.rpc.getSignaturesForAddress(this.pool, { before, limit: 1000 }, "confirmed");
       sigs = sigs.concat(page); if (page.length < 1000) break; before = page[page.length - 1].signature;
     }
-    const leaves = new Map(), nullifiers = new Set(), memos = [];
+    const leaves = new Map(), nullifiers = new Set(), events = [];
+    this.rejectedMemos = 0;
     for (const s of sigs.reverse()) {
       if (s.err) continue;
       const tx = await this.rpc.getTransaction(s.signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+      const keys = tx.transaction.message.getAccountKeys({ accountKeysFromLookups: tx.meta.loadedAddresses });
       const stack = [];
       for (const l of tx?.meta?.logMessages ?? []) {
         let m;
@@ -103,35 +122,65 @@ class ShieldedWallet {
         if (/^Program (\w+) (success|failed)/.test(l)) { stack.pop(); continue; }
         if (!l.startsWith("Program data: ") || stack[stack.length - 1] !== this.programId.toBase58()) continue;
         const d = Buffer.from(l.slice(14), "base64");
-        if (d.subarray(0, 8).equals(EV_DEP)) leaves.set(d.readUInt32LE(40), toBig(d.subarray(8, 40)));
-        else if (d.subarray(0, 8).equals(EV_TX)) {
-          nullifiers.add(toBig(d.subarray(8, 40))); nullifiers.add(toBig(d.subarray(40, 72)));
+        if (d.subarray(0, 8).equals(EV_DEP)) {
+          const c = toBig(d.subarray(8, 40)), index = d.readUInt32LE(40), amount = d.readBigUInt64LE(44);
+          leaves.set(index, c); events.push({ kind: "deposit", c, index, amount, sig: s.signature, time: s.blockTime });
+        } else if (d.subarray(0, 8).equals(EV_TX)) {
+          const nuls = [toBig(d.subarray(8, 40)), toBig(d.subarray(40, 72))];
+          nuls.forEach((x) => nullifiers.add(x));
           const first = d.readUInt32LE(136), outs = [toBig(d.subarray(72, 104)), toBig(d.subarray(104, 136))];
           leaves.set(first, outs[0]); leaves.set(first + 1, outs[1]);
-          const len = d.readUInt32LE(156);
-          if (len) memos.push({ memo: d.subarray(160, 160 + len), outs, first, sig: s.signature });
+          const withdraw = d.readBigUInt64LE(140), fee = d.readBigUInt64LE(148), len = d.readUInt32LE(156);
+          // compte payé publiquement : 4e compte de l'instruction `transact`
+          const ix = tx.transaction.message.compiledInstructions.find((i) => keys.get(i.programIdIndex).equals(this.programId));
+          const recipientToken = ix ? keys.get(ix.accountKeyIndexes[3]).toBase58() : null;
+          events.push({ kind: "transact", nuls, outs, first, withdraw, fee, memo: d.subarray(160, 160 + len), recipientToken, sig: s.signature, time: s.blockTime });
         }
       }
     }
     this.leaves = [...leaves.keys()].sort((a, b) => a - b).map((i, k) => { if (i !== k) throw new Error(`feuille ${k} manquante`); return leaves.get(i); });
-    const d = (await this.rpc.getAccountInfo(this.pool)).data; const ri = d.readUInt32LE(8 + 64 + 4);
-    const onchain = toBig(d.subarray(8 + 64 + 8 + ri * 32, 8 + 64 + 8 + (ri + 1) * 32));
+    const d = (await this.rpc.getAccountInfo(this.pool)).data; const ri = d.readUInt32LE(8 + 96 + 4);
+    const onchain = toBig(d.subarray(8 + 96 + 8 + ri * 32, 8 + 96 + 8 + (ri + 1) * 32));
     if (this.root() !== onchain) throw new Error("racine reconstruite ≠ racine on-chain");
-    // Notes reçues : déchiffrement, puis vérification que l'engagement est bien celui publié.
-    this.scanned = memos.length; this.rejectedMemos = 0;
-    for (const m of memos) {
-      const p = decryptNote(this.enc.privateKey, m.memo);
-      if (!p) continue;
-      const n = noteFor(this.pk, p.amount, p.blinding);
-      const k = m.outs.findIndex((c) => c === n.c);
-      if (k < 0) { this.rejectedMemos++; continue; } // message déchiffrable mais faux : ignoré
-      if (!this.notes.some((x) => x.c === n.c)) { this.notes.push(this.own(n)); this.received.push({ amount: n.amount, sig: m.sig }); }
+
+    // Reconnaissance de MES notes (avec pk, nk et la clé X25519 : fonctionne aussi pour l'auditeur).
+    const mine = new Map(this.notes.map((n) => [n.c, n]));
+    const add = (n) => { if (!mine.has(n.c)) { const o = this.own(n); mine.set(n.c, o); this.notes.push(o); } return mine.get(n.c); };
+    const history = []; let maxDeposit = -1;
+    for (const e of events) {
+      if (e.kind === "deposit") {
+        for (let i = 0; i < 64; i++) {
+          const n = noteFor(this.pk, e.amount, depositKdf(this.nk, i).blinding);
+          if (n.c === e.c) { add(n); maxDeposit = Math.max(maxDeposit, i); history.push({ type: "dépôt", amount: e.amount, sig: e.sig }); break; }
+        }
+        continue;
+      }
+      const spentMine = e.nuls.map((x) => [...mine.values()].find((n) => n.nullifier === x)).filter(Boolean);
+      // part destinataire (48 o) → note reçue en sortie n° 0
+      if (e.memo.length === 48) {
+        const p = decryptNote(this.enc.privateKey, e.memo.subarray(0, 40));
+        const n = p && noteFor(this.pk, p.amount, p.blinding);
+        if (n && n.c === e.outs[0] && spentMine.length === 0) { add(n); this.received.push({ amount: n.amount, sig: e.sig }); history.push({ type: "note reçue", amount: n.amount, sig: e.sig }); }
+        else if (p && spentMine.length === 0 && n && n.c !== e.outs[0]) this.rejectedMemos++;
+      }
+      if (spentMine.length) {
+        const inSum = spentMine.reduce((a, n) => a + n.amount, 0n);
+        let change = 0n;
+        if (e.memo.length >= 8) {
+          const k = changeKdf(this.nk, e.nuls[0]);
+          const amount = toBig(xor8(e.memo.subarray(e.memo.length - 8), k.ks));
+          const n = noteFor(this.pk, amount, k.blinding);
+          if (n.c === e.outs[1]) { add(n); change = amount; }
+        }
+        const sentPrivately = inSum - change - e.withdraw - e.fee;
+        history.push({ type: "dépense", spent: inSum, publicPayment: e.withdraw, paidTo: e.withdraw > 0n ? e.recipientToken : null,
+          privateNoteSent: sentPrivately, fee: e.fee, change, sig: e.sig });
+      }
     }
-    for (const n of this.notes) {
-      const i = this.leaves.findIndex((c) => c === n.c);
-      n.index = i >= 0 ? i : null; n.spent = nullifiers.has(n.nullifier);
-    }
-    return { leaves: this.leaves.length, root: onchain, memos: memos.length };
+    this.deposits = Math.max(this.deposits, maxDeposit + 1);
+    for (const n of this.notes) { const i = this.leaves.findIndex((c) => c === n.c); n.index = i >= 0 ? i : null; n.spent = nullifiers.has(n.nullifier); }
+    this.history = history;
+    return { leaves: this.leaves.length, root: onchain };
   }
 
   path(index) {
@@ -156,50 +205,51 @@ class ShieldedWallet {
     throw new Error(`solde privé insuffisant (${this.balance()} < ${need})`);
   }
 
-  /** Construit et prouve une transaction join-split. outs = 2 notes (déjà construites). */
-  build(ins, outs, withdraw, fee, recipientToken, relayerToken) {
+  /** Construit et prouve une transaction join-split. `makeOuts(nul0)` renvoie les 2 notes de
+   *  sortie (la monnaie dépend du nullificateur d'entrée n° 0). */
+  build(ins, makeOuts, withdraw, fee, recipientToken, relayerToken) {
+    if (!this.sk) throw new Error("mode auditeur : clé de dépense absente");
     const dummySk = rand();
     const inputs = ins.length === 2 ? ins : [ins[0], { ...noteFor(H([dummySk, 0n]), 0n), sk: dummySk, dummy: true }];
     const sks = inputs.map((n) => (n.dummy ? n.sk : this.sk));
-    const nulls = inputs.map((n, k) => H([sks[k], n.c]));
+    const nulls = inputs.map((n, k) => H([H([sks[k], 1n]), n.c]));
+    const outs = makeOuts(nulls[0]);
     const paths = inputs.map((n) => (n.dummy ? { path: Array(DEPTH).fill(0n), bits: Array(DEPTH).fill(false) } : this.path(n.index)));
-    return this.prove({
+    return { outs, ...this.prove({
       in_sk: sks, in_blinding: inputs.map((n) => n.blinding), in_amount: inputs.map((n) => n.amount),
       in_path: paths.map((p) => p.path), in_bits: paths.map((p) => p.bits),
       out_inner: outs.map((n) => n.inner), out_amount: outs.map((n) => n.amount),
       root: this.root(), nullifiers: nulls, out_commitments: outs.map((n) => n.c),
       withdraw, fee, recipient: pkField(recipientToken), relayer: pkField(relayerToken),
-    });
+    }) };
   }
+  change(nul0, amount) { const k = changeKdf(this.nk, nul0); return { note: this.own(noteFor(this.pk, amount, k.blinding)), part: xor8(amt8(amount), k.ks) }; }
 
-  /** Paiement x402 : withdraw = prix exact vers payTo ; monnaie rendue à soi. */
+  /** Paiement x402 : withdraw = prix exact vers payTo ; monnaie (sortie n° 1) rendue à soi. */
   pay(req) {
     const price = BigInt(req.amount), fee = BigInt(req.extra.fee);
-    const ins = this.selectInputs(price + fee);
-    const change = this.own(noteFor(this.pk, ins.reduce((s, n) => s + n.amount, 0n) - price - fee));
+    const ins = this.selectInputs(price + fee), rest = ins.reduce((s, n) => s + n.amount, 0n) - price - fee;
+    let ch;
     const t0 = Date.now();
     const recipientToken = spl.getAssociatedTokenAddressSync(new web3.PublicKey(req.asset), new web3.PublicKey(req.payTo));
-    const { proof, pw } = this.build(ins, [change, noteFor(this.pk, 0n)], price, fee, recipientToken, new web3.PublicKey(req.extra.feeRecipient));
-    this.notes.push(change);
-    return { payload: { proof: proof.toString("base64"), publicWitness: pw.toString("base64"), recipientOwner: req.payTo },
-      spent: ins.map((n) => n.amount), change: change.amount, proveMs: Date.now() - t0 };
+    const { proof, pw } = this.build(ins, (nul0) => { ch = this.change(nul0, rest); return [noteFor(this.pk, 0n), ch.note]; },
+      price, fee, recipientToken, new web3.PublicKey(req.extra.feeRecipient));
+    this.notes.push(ch.note);
+    return { payload: { proof: proof.toString("base64"), publicWitness: pw.toString("base64"), recipientOwner: req.payTo, memo: ch.part.toString("base64") },
+      spent: ins.map((n) => n.amount), change: rest, proveMs: Date.now() - t0 };
   }
 
-  /** Paiement PRIVÉ en note vers une adresse zk402 : aucun montant public. La note est
-   *  chiffrée pour le destinataire et jointe à la transaction (memo, 56 o). */
+  /** Paiement PRIVÉ en note vers une adresse zk402 (aucun montant public). */
   transfer(toAddress, amount, fee, relayer /* { owner, token } */) {
     const to = parseAddress(toAddress);
-    const ins = this.selectInputs(BigInt(amount) + BigInt(fee));
-    const { memo, blinding } = encryptNote(to.enc, amount);
-    const out = noteFor(to.pk, amount, blinding);
-    const change = this.own(noteFor(this.pk, ins.reduce((s, n) => s + n.amount, 0n) - BigInt(amount) - BigInt(fee)));
+    const ins = this.selectInputs(BigInt(amount) + BigInt(fee)), rest = ins.reduce((s, n) => s + n.amount, 0n) - BigInt(amount) - BigInt(fee);
+    const enc = encryptNote(to.enc, amount), out = noteFor(to.pk, amount, enc.blinding);
+    let ch;
     const t0 = Date.now();
-    // Aucun retrait public : le « destinataire » public est un compte existant du bon mint
-    // (ici celui du relayeur), qui reçoit 0.
-    const { proof, pw } = this.build(ins, [out, change], 0n, BigInt(fee), relayer.token, relayer.token);
-    this.notes.push(change);
+    const { proof, pw } = this.build(ins, (nul0) => { ch = this.change(nul0, rest); return [out, ch.note]; }, 0n, BigInt(fee), relayer.token, relayer.token);
+    this.notes.push(ch.note);
     return { payload: { proof: proof.toString("base64"), publicWitness: pw.toString("base64"), recipientOwner: relayer.owner.toBase58(),
-      memo: memo.toString("base64") }, change: change.amount, proveMs: Date.now() - t0, commitment: out.c, out };
+      memo: Buffer.concat([enc.part, ch.part]).toString("base64") }, change: rest, proveMs: Date.now() - t0, commitment: out.c, out };
   }
 
   prove(inp) {

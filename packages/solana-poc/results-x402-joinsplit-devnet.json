@@ -1,5 +1,5 @@
 {
-  "date": "2026-09-25T14:34:52.648Z",
+  "date": "2026-09-25T14:42:59.717Z",
   "rpc": "https://devnet.helius-rpc.com/?api-key=…",
   "network": "solana-devnet",
   "scheme": "shielded-joinsplit",
@@ -16,14 +16,14 @@
     },
     "paymentResponse": {
       "success": true,
-      "transaction": "PwMuRgBggWhcTK2n9ewMR2dVaYmSAKdJb7UQmHhALwn6r2rnYXAV5mEQHaQrEHhV18Ee4jb2qAJah1D7m7YDhuF",
+      "transaction": "3LYTTXMykCapQwK9StEPS2uqiKcwf1h3wPwMTWpU2CgyubgvKaCVpiSsiLyeJNN6tyD2YLR6zxudyXzFs39iv7kX",
       "network": "solana-devnet",
       "payer": "shielded",
-      "computeUnits": 737042
+      "computeUnits": 737373
     },
-    "totalMs": 3841,
+    "totalMs": 4261,
     "change": "858000",
-    "proveMs": 1838
+    "proveMs": 1926
   },
   "replayA": {
     "status": 402,
@@ -34,17 +34,17 @@
         {
           "scheme": "shielded-joinsplit",
           "network": "solana-devnet",
-          "asset": "AZWQfgbZgXw4iYatcozBHpHyXC3yf2T1i2QY6wSbGBFV",
-          "payTo": "4xfnwaUpMY5as3C2movKseLkoXs1xdTG7yunuUo9nN9t",
+          "asset": "736NsHKJWsTteR8JtTP4kKXQgcvCznnE12N6HLBGGMD9",
+          "payTo": "aznoBFfBiDYfj5Ac4zFghW7zEgGerNg8oECn9iwiNos",
           "amount": "137000",
           "resource": "/weather",
           "description": "donnée payante",
           "maxTimeoutSeconds": 60,
           "extra": {
             "program": "H9YGaz5zPS1LXAjhDFnpj88UQGYbDoy64UQJtXBVnzno",
-            "pool": "EXaezeNUWLLDsgDbhDV5MLS7woXare1HfPtKRQJTQUoV",
+            "pool": "H4fS8PzQypwiWmTPTYTDjyGz6aUh1aBECMJwdfM3Yw3t",
             "fee": "5000",
-            "feeRecipient": "3yLShcA6wxomyGVZP3NiJmSmFCKJJgSncsgkHNuoKNtj",
+            "feeRecipient": "HPXZvLEFrdGg35ZHhJs7EsuQVFrgLE8Su1QfFsiQefFE",
             "decimals": 6
           }
         }
@@ -61,17 +61,17 @@
         {
           "scheme": "shielded-joinsplit",
           "network": "solana-devnet",
-          "asset": "AZWQfgbZgXw4iYatcozBHpHyXC3yf2T1i2QY6wSbGBFV",
-          "payTo": "4xfnwaUpMY5as3C2movKseLkoXs1xdTG7yunuUo9nN9t",
+          "asset": "736NsHKJWsTteR8JtTP4kKXQgcvCznnE12N6HLBGGMD9",
+          "payTo": "aznoBFfBiDYfj5Ac4zFghW7zEgGerNg8oECn9iwiNos",
           "amount": "137000",
           "resource": "/weather",
           "description": "donnée payante",
           "maxTimeoutSeconds": 60,
           "extra": {
             "program": "H9YGaz5zPS1LXAjhDFnpj88UQGYbDoy64UQJtXBVnzno",
-            "pool": "EXaezeNUWLLDsgDbhDV5MLS7woXare1HfPtKRQJTQUoV",
+            "pool": "H4fS8PzQypwiWmTPTYTDjyGz6aUh1aBECMJwdfM3Yw3t",
             "fee": "5000",
-            "feeRecipient": "3yLShcA6wxomyGVZP3NiJmSmFCKJJgSncsgkHNuoKNtj",
+            "feeRecipient": "HPXZvLEFrdGg35ZHhJs7EsuQVFrgLE8Su1QfFsiQefFE",
             "decimals": 6
           }
         }
@@ -88,17 +88,17 @@
         {
           "scheme": "shielded-joinsplit",
           "network": "solana-devnet",
-          "asset": "AZWQfgbZgXw4iYatcozBHpHyXC3yf2T1i2QY6wSbGBFV",
-          "payTo": "4xfnwaUpMY5as3C2movKseLkoXs1xdTG7yunuUo9nN9t",
+          "asset": "736NsHKJWsTteR8JtTP4kKXQgcvCznnE12N6HLBGGMD9",
+          "payTo": "aznoBFfBiDYfj5Ac4zFghW7zEgGerNg8oECn9iwiNos",
           "amount": "137000",
           "resource": "/weather",
           "description": "donnée payante",
           "maxTimeoutSeconds": 60,
           "extra": {
             "program": "H9YGaz5zPS1LXAjhDFnpj88UQGYbDoy64UQJtXBVnzno",
-            "pool": "EXaezeNUWLLDsgDbhDV5MLS7woXare1HfPtKRQJTQUoV",
+            "pool": "H4fS8PzQypwiWmTPTYTDjyGz6aUh1aBECMJwdfM3Yw3t",
             "fee": "5000",
-            "feeRecipient": "3yLShcA6wxomyGVZP3NiJmSmFCKJJgSncsgkHNuoKNtj",
+            "feeRecipient": "HPXZvLEFrdGg35ZHhJs7EsuQVFrgLE8Su1QfFsiQefFE",
             "decimals": 6
           }
         }
@@ -114,10 +114,10 @@
     },
     "paymentResponse": {
       "success": true,
-      "transaction": "bVFnZoEr5gUHz8pNKbtJPRr4kXcrgAdX5vCFtugdFAdeiu8H6m5kSX7CX44ouiK2PFgcfJdDy65Dw5ZQjB79r6h",
+      "transaction": "5TR8jidUP8V8vQiLhrG7koyYiQtLY9GoQ3GqvxL51NqjxQ4Pn3mmQvdaXEynxDZ8Kvhz2mnLPuKE97nw3UKpqZhD",
       "network": "solana-devnet",
       "payer": "shielded",
-      "computeUnits": 737180
+      "computeUnits": 735449
     },
     "spent": [
       "858000"
@@ -133,17 +133,17 @@
         {
           "scheme": "shielded-joinsplit",
           "network": "solana-devnet",
-          "asset": "AZWQfgbZgXw4iYatcozBHpHyXC3yf2T1i2QY6wSbGBFV",
-          "payTo": "2Vx7nN7vnCj99x8CnZsopUvVN7RF5MeEXoJrKjDXjiGC",
+          "asset": "736NsHKJWsTteR8JtTP4kKXQgcvCznnE12N6HLBGGMD9",
+          "payTo": "GCQB5pjQjfUPtvE8D7muxaGr1Zr6uqfjcLMLpsisGgqY",
           "amount": "10000",
           "resource": "/news",
           "description": "donnée payante",
           "maxTimeoutSeconds": 60,
           "extra": {
             "program": "H9YGaz5zPS1LXAjhDFnpj88UQGYbDoy64UQJtXBVnzno",
-            "pool": "EXaezeNUWLLDsgDbhDV5MLS7woXare1HfPtKRQJTQUoV",
+            "pool": "H4fS8PzQypwiWmTPTYTDjyGz6aUh1aBECMJwdfM3Yw3t",
             "fee": "5000",
-            "feeRecipient": "3yLShcA6wxomyGVZP3NiJmSmFCKJJgSncsgkHNuoKNtj",
+            "feeRecipient": "HPXZvLEFrdGg35ZHhJs7EsuQVFrgLE8Su1QfFsiQefFE",
             "decimals": 6
           }
         }
@@ -169,11 +169,11 @@
   },
   "agentInPaymentTxs": false,
   "txA": {
-    "computeUnits": 737042,
+    "computeUnits": 737373,
     "fee": 5000
   },
   "txB": {
-    "computeUnits": 737180,
+    "computeUnits": 735449,
     "fee": 5000
   }
 }

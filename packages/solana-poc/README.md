@@ -339,6 +339,53 @@ dépensé sa note uniquement via le relayeur. Le test x402 au prix exact
 Remarque : `joinsplit-test.js` et `results-joinsplit-devnet.json` utilisent le format de notes
 v1 (`H(H(nk, secret), montant)`) ; le programme `jspool` de devnet est désormais en v2.
 
+## Conformité : dépôts filtrés, destinataires filtrés, clés de consultation — `compliance.js`, `compliance-test.js`
+
+1. **Dépôts filtrés** : chaque pool a un **contrôleur** (`screener`, fixé à `initialize`) qui
+   doit **co-signer** tout dépôt (`NotScreened` sinon). Le service de contrôle
+   (`compliance.js`) vérifie le déposant avant de signer. Ici avec une liste locale ; en
+   production, liste SDN de l'OFAC et/ou API de filtrage (Chainalysis, TRM…).
+2. **Destinataires filtrés** : le facilitateur refuse de payer une adresse sanctionnée (451).
+3. **Clé de consultation** (divulgation sélective). Le circuit sépare la clé de nullificateur
+   `nk = H(sk, 1)` de la clé de dépense `sk`, avec nullificateur `H(nk, C)`. La clé
+   `zk402view:` = (pk, nk, clé privée X25519) permet de reconstituer **tout** l'historique :
+   - dépôts : blinding = HKDF(nk, « deposit » ‖ i) ;
+   - notes reçues : déchiffrement X25519 ;
+   - dépenses : nullificateurs ;
+   - monnaie rendue : blinding = HKDF(nk, nullificateur n° 0), montant chiffré sur 8 o ;
+   - paiements publics et leur destinataire.
+
+   Elle ne permet **pas** de dépenser : test Noir `test_viewing_key_cannot_spend` ✅, et le
+   portefeuille en mode auditeur n'a pas de clé de dépense.
+
+Message joint à `transact` : 48 o pour un transfert privé (40 pour le destinataire + 8 pour la
+monnaie) et 8 o pour un paiement. Pas d'étiquette d'authentification : l'intégrité vient du
+recalcul de l'engagement. Transfert privé : **1 194 o**.
+
+### Résultats sur Solana devnet (25 septembre 2026) — `results-compliance-devnet.json`
+
+| Test | Résultat |
+|---|---|
+| Mallory (sanctionnée) demande un dépôt | ✅ refusé par le contrôleur (« liste de sanctions ») |
+| Mallory contourne le contrôleur en se désignant elle-même | ✅ refusé **on-chain** (`NotScreened`, [transaction](https://explorer.solana.com/tx/3Tmg7tBLyFiDcV5B6ETFxaRP5hst4YqAmLA8VmaheCDerrkuJmAVkMuRdgWjZ28uFjVGtCd2DyhMEAPJxKH1zUnZ?cluster=devnet)) |
+| Alice dépose 1,00 (co-signé) | ✅ ; le journal du contrôleur garde chaque décision |
+| Alice → vendeur sanctionné | ✅ refusé par le facilitateur (451) |
+| Alice → vendeur 0,137 (public) puis → Bob 0,30 (note privée) | ✅ ([paiement](https://explorer.solana.com/tx/5me1kotbc7UJM7PPu1E19NgPqFqPbfjiBjPn3o8qcXUEEdnx88YExhnVEcZUUgEWXzRiVxFxkrKw6kBGgV4ZtktH?cluster=devnet), [transfert](https://explorer.solana.com/tx/2jUC71U7DbRvL7tYYaTEcFrhZZTghvav1Zw88m8QpZULpWQuj1B9HQsbmMuwq2sPFHbQ3YqGsAYZiY4x6TSbFYpM?cluster=devnet)) |
+| Auditeur avec la clé de consultation d'Alice | ✅ historique complet : dépôt 1,00 ; paiement public 0,137 **au compte du vendeur** + frais 0,005, monnaie 0,858 ; note privée **0,30 envoyée** + frais, monnaie 0,553. Solde vu **0,553 = solde d'Alice** |
+| Auditeur avec la clé de consultation de Bob | ✅ « note reçue 0,30 » ; solde 0,30 |
+| Carol (sans clé) | ✅ rien |
+| L'auditeur tente de dépenser | ✅ impossible (« clé de dépense absente ») |
+
+Les tests `notes-test.js` et `x402-js-test.js` repassent avec le contrôleur (soldes exacts).
+
+**Limites**
+- Pas d'**ensembles d'association** à la Privacy Pools : ils permettraient de prouver au retrait
+  que ses fonds viennent d'un ensemble de dépôts approuvés.
+- Le contrôleur est un point de confiance : il peut refuser des dépôts, sans pouvoir voler ni
+  lire les notes.
+- Le filtrage porte sur l'adresse du déposant, pas sur l'origine en amont de ses fonds : il faut
+  un fournisseur d'analyse on-chain.
+
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
 Premier essai : une preuve valide restait **acceptée avec `recipient`, `relayer` ou `fee`

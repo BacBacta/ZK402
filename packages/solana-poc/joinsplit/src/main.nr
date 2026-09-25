@@ -1,13 +1,16 @@
 // Circuit JOIN-SPLIT 2 -> 2 du pool blinde Solana (montants libres, rendu de monnaie).
 //
 // Note : C = H(H(pk, blinding), montant), ou pk = H(sk, 0) est la cle publique du proprietaire
-// et sk sa cle de depense secrete ; nullificateur = H(sk, C). Seul le detenteur de sk peut
-// depenser la note (l'emetteur d'une note pour autrui connait pk, blinding et le montant,
-// mais pas sk : il ne peut ni la depenser ni savoir quand elle est depensee).
+// et sk sa cle de depense secrete ; nullificateur = H(nk, C) avec nk = H(sk, 1).
+// - Seul le detenteur de sk peut depenser (il faut sk tel que H(sk, 0) = pk).
+// - nk est une cle de CONSULTATION : un auditeur qui la recoit peut reconnaitre les notes
+//   depensees (nullificateurs) sans pouvoir depenser (il lui manque sk).
+// - L'emetteur d'une note pour autrui ne connait ni sk ni nk : il ne peut ni la depenser ni
+//   savoir quand elle est depensee.
 // Enonce prouve :
 //  - chaque entree de montant > 0 est une feuille de l'arbre de racine `root` ;
 //    une entree de montant 0 est fictive (pas de controle d'appartenance) ;
-//  - nullifiers[k] = H(sk_k, C_k) et les deux nullificateurs sont distincts ;
+//  - nullifiers[k] = H(H(sk_k, 1), C_k) et les deux nullificateurs sont distincts ;
 //  - out_commitments[k] = H(out_inner_k, out_amount_k) avec out_inner = H(pk_destinataire,
 //    blinding) calcule hors circuit par l'emetteur ;
 //  - conservation : somme(entrees) = somme(sorties) + withdraw + fee ;
@@ -47,7 +50,7 @@ fn main(
         if in_amount[k] != 0 {
             assert(node == root, "note absente de l'arbre");
         }
-        assert(nullifiers[k] == hash_2([in_sk[k], c]), "nullificateur incorrect");
+        assert(nullifiers[k] == hash_2([hash_2([in_sk[k], 1]), c]), "nullificateur incorrect");
         sum_in += in_amount[k] as Field;
     }
     assert(nullifiers[0] != nullifiers[1], "nullificateurs identiques");
@@ -65,6 +68,10 @@ fn main(
 
 fn note(sk: Field, blinding: Field, amount: Field) -> Field {
     hash_2([hash_2([hash_2([sk, 0]), blinding]), amount])
+}
+
+fn nul(sk: Field, c: Field) -> Field {
+    hash_2([hash_2([sk, 1]), c])
 }
 
 fn single_leaf_root(c: Field) -> ([Field; DEPTH], Field) {
@@ -87,7 +94,7 @@ fn test_split_and_dummy() {
     let (path, root) = single_leaf_root(c);
     let dc = note(99, 1, 0);
     main([11, 99], [22, 1], [1000, 0], [path, path], [[false; DEPTH], [false; DEPTH]], [5, 6], [700, 0],
-        root, [hash_2([11, c]), hash_2([99, dc])], [hash_2([5, 700]), hash_2([6, 0])], 280, 20, 0xabc, 0xdef);
+        root, [nul(11, c), nul(99, dc)], [hash_2([5, 700]), hash_2([6, 0])], 280, 20, 0xabc, 0xdef);
 }
 
 #[test(should_fail_with = "montants non conserves")]
@@ -96,7 +103,7 @@ fn test_inflation_rejected() {
     let (path, root) = single_leaf_root(c);
     let dc = note(99, 1, 0);
     main([11, 99], [22, 1], [1000, 0], [path, path], [[false; DEPTH], [false; DEPTH]], [5, 6], [900, 0],
-        root, [hash_2([11, c]), hash_2([99, dc])], [hash_2([5, 900]), hash_2([6, 0])], 280, 20, 0xabc, 0xdef);
+        root, [nul(11, c), nul(99, dc)], [hash_2([5, 900]), hash_2([6, 0])], 280, 20, 0xabc, 0xdef);
 }
 
 #[test(should_fail_with = "note absente de l'arbre")]
@@ -105,7 +112,7 @@ fn test_fake_note_rejected() {
     let path = [0; DEPTH];
     let dc = note(99, 1, 0);
     main([11, 99], [22, 1], [1000, 0], [path, path], [[false; DEPTH], [false; DEPTH]], [5, 6], [980, 0],
-        12345, [hash_2([11, c]), hash_2([99, dc])], [hash_2([5, 980]), hash_2([6, 0])], 0, 20, 0xabc, 0xdef);
+        12345, [nul(11, c), nul(99, dc)], [hash_2([5, 980]), hash_2([6, 0])], 0, 20, 0xabc, 0xdef);
 }
 
 // L'emetteur d'une note pour Bob connait pk_Bob, blinding et le montant, mais pas sk_Bob :
@@ -119,5 +126,18 @@ fn test_sender_cannot_spend_recipient_note() {
     let forged = note(alice_sk, 22, 1000);
     let dc = note(99, 1, 0);
     main([alice_sk, 99], [22, 1], [1000, 0], [path, path], [[false; DEPTH], [false; DEPTH]], [5, 6], [980, 0],
-        root, [hash_2([alice_sk, forged]), hash_2([99, dc])], [hash_2([5, 980]), hash_2([6, 0])], 0, 20, 0xabc, 0xdef);
+        root, [nul(alice_sk, forged), nul(99, dc)], [hash_2([5, 980]), hash_2([6, 0])], 0, 20, 0xabc, 0xdef);
+}
+
+// Un auditeur qui detient la cle de consultation nk = H(sk, 1) ne peut pas depenser : utiliser
+// nk comme cle de depense donne une autre cle publique, donc une note absente de l'arbre.
+#[test(should_fail_with = "note absente de l'arbre")]
+fn test_viewing_key_cannot_spend() {
+    let sk = 777;
+    let c = note(sk, 22, 1000);
+    let (path, root) = single_leaf_root(c);
+    let nk = hash_2([sk, 1]);
+    let dc = note(99, 1, 0);
+    main([nk, 99], [22, 1], [1000, 0], [path, path], [[false; DEPTH], [false; DEPTH]], [5, 6], [980, 0],
+        root, [hash_2([nk, c]), nul(99, dc)], [hash_2([5, 980]), hash_2([6, 0])], 0, 20, 0xabc, 0xdef);
 }

@@ -1,0 +1,89 @@
+{
+  "date": "2026-09-25T14:41:31.435Z",
+  "rpc": "https://devnet.helius-rpc.com/?api-key=…",
+  "program": "H9YGaz5zPS1LXAjhDFnpj88UQGYbDoy64UQJtXBVnzno",
+  "malloryScreened": {
+    "ok": false,
+    "stage": "contrôleur",
+    "reason": "déposant sur liste de sanctions"
+  },
+  "mallorySelfSigned": {
+    "ok": false,
+    "stage": "programme",
+    "reason": "Program log: AnchorError caused by account: screener. Error Code: NotScreened. Error Number: 6013. Error Message: Dépôt non co-signé par le contrôleur du pool.",
+    "sig": "3Tmg7tBLyFiDcV5B6ETFxaRP5hst4YqAmLA8VmaheCDerrkuJmAVkMuRdgWjZ28uFjVGtCd2DyhMEAPJxKH1zUnZ"
+  },
+  "aliceDeposit": {
+    "ok": true,
+    "sig": "2VTxEbghRSv1R21bQ9fQGLVLd1hxc2w71oSE8vYAPvNGkjthy6F6dJRppXfe1F7FYTWMYUk6sZW2r3ocoi5HYtdX"
+  },
+  "paySanctioned": {
+    "status": 451,
+    "error": "destinataire sur liste de sanctions"
+  },
+  "paySeller": {
+    "status": 200,
+    "sig": "5me1kotbc7UJM7PPu1E19NgPqFqPbfjiBjPn3o8qcXUEEdnx88YExhnVEcZUUgEWXzRiVxFxkrKw6kBGgV4ZtktH",
+    "txBytes": 1186
+  },
+  "transferBob": {
+    "status": 200,
+    "sig": "2jUC71U7DbRvL7tYYaTEcFrhZZTghvav1Zw88m8QpZULpWQuj1B9HQsbmMuwq2sPFHbQ3YqGsAYZiY4x6TSbFYpM",
+    "txBytes": 1194
+  },
+  "audit": {
+    "alice": {
+      "balanceSeenByAlice": "553000",
+      "balanceSeenByAuditor": "553000",
+      "history": [
+        {
+          "type": "dépôt",
+          "amount": "1000000",
+          "sig": "2VTxEbghRSv1R21bQ9fQGLVLd1hxc2w71oSE8vYAPvNGkjthy6F6dJRppXfe1F7FYTWMYUk6sZW2r3ocoi5HYtdX"
+        },
+        {
+          "type": "dépense",
+          "spent": "1000000",
+          "publicPayment": "137000",
+          "paidTo": "Cm46XM4feZrKBzNBAXayc1HeYKEKMNW3MG4JhMMHM7ij",
+          "privateNoteSent": "0",
+          "fee": "5000",
+          "change": "858000",
+          "sig": "5me1kotbc7UJM7PPu1E19NgPqFqPbfjiBjPn3o8qcXUEEdnx88YExhnVEcZUUgEWXzRiVxFxkrKw6kBGgV4ZtktH"
+        },
+        {
+          "type": "dépense",
+          "spent": "858000",
+          "publicPayment": "0",
+          "paidTo": null,
+          "privateNoteSent": "300000",
+          "fee": "5000",
+          "change": "553000",
+          "sig": "2jUC71U7DbRvL7tYYaTEcFrhZZTghvav1Zw88m8QpZULpWQuj1B9HQsbmMuwq2sPFHbQ3YqGsAYZiY4x6TSbFYpM"
+        }
+      ]
+    },
+    "bob": {
+      "balanceSeenByBob": "300000",
+      "balanceSeenByAuditor": "300000",
+      "history": [
+        {
+          "type": "note reçue",
+          "amount": "300000",
+          "sig": "2jUC71U7DbRvL7tYYaTEcFrhZZTghvav1Zw88m8QpZULpWQuj1B9HQsbmMuwq2sPFHbQ3YqGsAYZiY4x6TSbFYpM"
+        }
+      ]
+    },
+    "carol": {
+      "balance": "0",
+      "history": 0
+    }
+  },
+  "auditorCanSpend": false,
+  "auditorSpendError": "mode auditeur : clé de dépense absente",
+  "expected": {
+    "alice": "553000",
+    "bob": "300000",
+    "sellerToken": "Cm46XM4feZrKBzNBAXayc1HeYKEKMNW3MG4JhMMHM7ij"
+  }
+}

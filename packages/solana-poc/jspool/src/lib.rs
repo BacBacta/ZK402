@@ -1,6 +1,8 @@
 //! Pool blindé JOIN-SPLIT sur Solana (montants libres, rendu de monnaie) — test, NON audité.
 //!
-//! Note : C = H(H(pk, blinding), montant), pk = H(sk, 0) ; nullificateur = H(sk, C).
+//! Note : C = H(H(pk, blinding), montant), pk = H(sk, 0) ; nullificateur = H(nk, C), nk = H(sk, 1).
+//! Conformité : chaque pool a un CONTRÔLEUR (`screener`) qui doit co-signer tout dépôt. Le
+//! service de contrôle (hors chaîne) vérifie le déposant (listes de sanctions) avant de signer.
 //! `transact` publie aussi un message chiffré (≤ MAX_MEMO octets) dans l'événement
 //! `Transacted` : la note de sortie chiffrée pour son destinataire. Le programme ne peut pas
 //! vérifier ce chiffré ; le destinataire, lui, recalcule l'engagement après déchiffrement.
@@ -87,6 +89,8 @@ pub enum PoolError {
     BadTokenAccount,
     #[msg("Message chiffré trop long")]
     MemoTooLong,
+    #[msg("Dépôt non co-signé par le contrôleur du pool")]
+    NotScreened,
 }
 
 #[account(zero_copy)]
@@ -94,6 +98,7 @@ pub enum PoolError {
 pub struct Pool {
     pub mint: Pubkey,
     pub vault: Pubkey,
+    pub screener: Pubkey,
     pub next_index: u32,
     pub root_index: u32,
     pub roots: [[u8; 32]; ROOT_HISTORY],
@@ -206,7 +211,7 @@ fn transfer_ix(from: &Pubkey, to: &Pubkey, authority: &Pubkey, amount: u64) -> I
 pub mod jspool {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, screener: Pubkey) -> Result<()> {
         let (vmint, vowner) = token_account(&ctx.accounts.vault)?;
         require_keys_eq!(vowner, ctx.accounts.pool.key(), PoolError::BadTokenAccount);
         require_keys_eq!(vmint, ctx.accounts.mint.key(), PoolError::BadTokenAccount);
@@ -214,6 +219,7 @@ pub mod jspool {
         let p = &mut ctx.accounts.pool.load_init()?;
         p.mint = vmint;
         p.vault = ctx.accounts.vault.key();
+        p.screener = screener;
         p.bump = bump;
         let mut z = [0u8; 32];
         for i in 0..DEPTH {
@@ -335,6 +341,9 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     pub depositor: Signer<'info>,
+    /// Contrôleur de conformité du pool : sa signature atteste que le déposant a été filtré.
+    #[account(address = pool.load()?.screener @ PoolError::NotScreened)]
+    pub screener: Signer<'info>,
     #[account(mut, seeds = [b"pool", pool.load()?.mint.as_ref()], bump = pool.load()?.bump)]
     pub pool: AccountLoader<'info, Pool>,
     /// CHECK: doit être le coffre enregistré.
