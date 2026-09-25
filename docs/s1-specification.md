@@ -328,3 +328,49 @@ ou déchiffrement vérifiable).
 3. **Lien par le financement du gas** : la première conception exigeait que le pseudonyme verse
    l'allocation en ETH, et donc qu'il reçoive de l'ETH de l'extérieur. **Corrigé** : allocation
    débitée du solde chiffré en BASE.
+
+---
+
+## P3 — Latence et passage à l'échelle (incrément 5)
+
+### Constructions
+
+1. **Appariement par sommes préfixes** (scan de Blelloch). Le reste de chaque ordre vaut
+   `max(0, M − Σ_{j<i, même sens} eff_j)`. Toutes les exécutions deviennent **indépendantes** ;
+   la profondeur passe de O(N) à O(log N). Règlement en phases Eff / Up / Down / Fills,
+   découpables en transactions.
+   - **Équivalence avec le FIFO séquentiel prouvée** (Halmos, toutes entrées, 4 ordres) ;
+   - 80 scénarios aléatoires et un lot de 19 ordres réglé par pas de 3 sont conformes au modèle.
+2. **Mises à jour de soldes compactes** : 12 opérations FHE au lieu de 14 par exécution. Égalité
+   avec l'écriture d'origine prouvée modulo 2⁶⁴ (Halmos).
+3. **Soumission à preuve unique** (`submitOrderBatched`) : sens et quantité vérifiés avec une seule
+   signature, donc une seule preuve côté client.
+
+### Mesures réelles (Base Sepolia, 25 septembre 2026)
+
+| Lot | Version | Chiffrement client | Règlement on-chain | Lecture : médiane | Lecture : dernier | Gas du règlement | Exact |
+|---|---|---|---|---|---|---|---|
+| 16 | FIFO séquentiel (phase 0) | 27 s (2 preuves) | 3,9 s | 31,1 s | 39,8 s | 14,7 M | 16/16 |
+| 16 | **Scan + preuve unique** | **16 s** | 7,4 s | **24,7 s** | **35,2 s** | 21,0 M | 16/16 |
+| 32 | **Scan + preuve unique** | 15,7 s | 13,8 s | 48,2 s | 68,7 s | 42,1 M | 32/32 |
+
+### Conclusion (constat, pas hypothèse)
+
+- **La latence double quand le lot double** (35 s → 69 s). Le facteur limitant est le **débit**
+  du coprocesseur CoFHE du testnet, environ **15 opérations FHE par seconde** (≈ 860 opérations
+  en ≈ 55 s pour 32 ordres), et **non la profondeur** du calcul. Le scan apporte un gain réel mais
+  limité (−12 % à −21 % à 16 ordres), ce qui suggère un parallélisme partiel chez le coprocesseur.
+- **L'objectif « 64 ordres en < 60 s » n'est PAS atteignable sur l'infrastructure actuelle**. Par
+  extrapolation linéaire mesurée, 64 ordres donneraient ≈ 135 s.
+- **Ce qui est atteignable** : **≈ 24 ordres par lot pour une lecture en < 60 s**, et de l'ordre de
+  1 500 ordres par heure si le débit du coprocesseur est partagé entre tous les lots (à vérifier
+  avec Fhenix).
+- **Leviers restants**, par ordre d'impact :
+  1. le débit du coprocesseur, qui ne dépend pas de nous : **à demander à Fhenix** (mainnet,
+     accélération GPU annoncée) ;
+  2. réduire encore les opérations par ordre, sachant que les deux multiplications (couverture et
+     coût) sont les plus coûteuses ;
+  3. calibrer la taille des lots sur l'objectif de latence visé.
+- **Chiffrement côté client** : 16 s mesurées dans un conteneur cloud, pour un objectif de 5 s.
+  **Non atteint.** Le coût est dominé par la preuve de connaissance du chiffré, calculée
+  localement ; reste à mesurer sur un vrai poste ou un serveur multi-cœur.

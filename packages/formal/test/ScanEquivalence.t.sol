@@ -58,3 +58,23 @@ contract ScanEquivalenceTest {
         }
     }
 }
+
+/// @notice P3 : l'écriture compacte des mises à jour de soldes (12 opérations) est égale à
+///         l'écriture d'origine (14 opérations) pour TOUTES les valeurs, modulo 2^64.
+contract CompactUpdateEquivalenceTest {
+    function check_compactBalanceUpdate(uint64 bB, uint64 qB, uint64 fill, uint64 cost, bool isBuy) public pure {
+        unchecked {
+            // origine
+            uint64 fb = isBuy ? fill : 0;
+            uint64 fs = fill - fb;
+            uint64 qb = isBuy ? cost : 0;
+            uint64 qs = cost - qb;
+            uint64 b0 = (bB + fb) - fs;
+            uint64 q0 = (qB - qb) + qs;
+            // compacte
+            uint64 b1 = isBuy ? bB + fill : bB - fill;
+            uint64 q1 = isBuy ? qB - cost : qB + cost;
+            assert(b0 == b1 && q0 == q1);
+        }
+    }
+}

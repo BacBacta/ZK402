@@ -661,16 +661,17 @@ contract SealedBatchPoolV2 {
         euint64 prefix = FHE.select(o.isBuy, _sb[i], _ss[i]);
         euint64 rem = FHE.select(FHE.gte(_matched, prefix), FHE.sub(_matched, prefix), _zero);
         euint64 fill = FHE.min(o.eff, rem);
-        euint64 fb = FHE.select(o.isBuy, fill, _zero);
-        euint64 fs = FHE.sub(fill, fb);
-
         euint64 cost = FHE.mul(fill, _price);
-        euint64 qb = FHE.select(o.isBuy, cost, _zero);
-        euint64 qs = FHE.sub(cost, qb);
 
+        // P3 : 12 opérations au lieu de 14 (le coprocesseur est limité par son DÉBIT, mesuré).
+        // Achat : BASE + fill, QUOTE − cost ; vente : BASE − fill, QUOTE + cost. Les deux
+        // branches sont calculées (circuit constant) ; la branche non retenue peut reboucler,
+        // elle est écartée par select. La branche retenue ne reboucle pas (couverture, bornes).
         address t = o.trader;
-        euint64 b = FHE.sub(FHE.add(_base[t], fb), fs);
-        euint64 q = FHE.add(FHE.sub(_quote[t], qb), qs);
+        euint64 bB = _base[t];
+        euint64 qB = _quote[t];
+        euint64 b = FHE.select(o.isBuy, FHE.add(bB, fill), FHE.sub(bB, fill));
+        euint64 q = FHE.select(o.isBuy, FHE.sub(qB, cost), FHE.add(qB, cost));
         _setBalances(t, b, q);
         _lastFill[t] = fill;
         FHE.allowThis(fill);

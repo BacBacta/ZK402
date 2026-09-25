@@ -1,4 +1,4 @@
-# S1 — Mesures et risques résiduels (état au 25 septembre 2026, incréments 1 à 4)
+# S1 — Mesures et risques résiduels (état au 25 septembre 2026, incréments 1 à 5)
 
 > Livrables 5 et 6 du programme [`prompt-s1-points-ouverts.md`](prompt-s1-points-ouverts.md).
 > Modèle de menaces : [`s1-modele-menaces.md`](s1-modele-menaces.md). Spécification :
@@ -85,7 +85,8 @@ donc ΣQUOTE' = ΣQUOTE − p·Σfb + p·Σfs = ΣQUOTE, puisque Σfb = Σfs (pr
 | R4 | ~~Pyth périmé, API Hermes sous clé~~ | **Résolu (incrément 2)** : règle 2 sur 3 avec API3. Pyth reste utilisable si quelqu'un pousse une mise à jour signée | Vivacité assurée par Chainlink + API3 | Clé Hermes optionnelle pour réactiver Pyth |
 | R5 | ~~Choix du moment de déclenchement~~ | **Résolu (incrément 2)** : prix évalué à t_k | Résidu R5′ : le déclencheur peut influer sur la validité d'API3 ou de Pyth-stocké → **≤ 0,5 %** du prix | Supprimable avec un historique on-chain pour API3 ou avec des mises à jour Pyth datées |
 | R6 | **Censure par le séquenceur de Base** ≤ 12 h | Inhérent à Base (séquenceur centralisé, inclusion forcée L1) | Pas de perte : les ordres restent dans leur lot | Documenté ; aucune échéance dure côté trader |
-| R7 | **Latence qui croît avec la taille du lot** (≈ 1,5 s par ordre, FIFO séquentiel) | P3 non traité | 39,8 s pour 16 ordres (mesuré) | Incrément 3 : allocation parallèle |
+| R7 | **Latence qui croît avec la taille du lot** | **Traité en partie (P3)** : scan parallèle (équivalence prouvée), −2 opérations par ordre, preuve unique. La limite restante est le **débit du coprocesseur** (≈ 15 opérations FHE/s sur le testnet), hors de notre contrôle | Mesuré : 16 ordres → 35,2 s ; 32 ordres → 68,7 s. Objectif « 64 en < 60 s » **non atteint** ; ≈ 24 ordres par lot pour < 60 s | Débit Fhenix (mainnet, GPU) ; lots calibrés ; moins de multiplications |
+| R21 | **Chiffrement client 16 s** (objectif 5 s) | Preuve de connaissance calculée localement ; mesuré en conteneur | Les ordres se préparent avant le lot : pas d'effet sur le règlement | Mesurer sur un vrai poste ; pré-chiffrement par les agents |
 | R8 | ~~Crédits de démo~~ **Traité (incrément 4)** : ETH natif et jeton ERC-20 réels, avec entrées et sorties | Frais CoFHE mainnet toujours inconnus | — | Demander les frais à Fhenix ; tester l'USDC réel de Base Sepolia (`0x036C…CF7e`, faucet Circle) |
 | R9 | **Liquidité** | P5 non traité | — | Incrément 5 : simulation sur les flux des agents de Base |
 | R10 | **Conformité** | P6 non traité | — | Incrément 6 : preuves ZK côté utilisateur, sans clé tierce |
