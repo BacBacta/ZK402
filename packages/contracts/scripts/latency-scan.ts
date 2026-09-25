@@ -175,6 +175,7 @@ async function main() {
   // HOLD_APPLY=1 (expérience de contrôle) : la phase Apply n'est lancée qu'une fois toutes les
   // exécutions lues, pour isoler le coût de la phase Fills seule. Exige N multiple de STEP.
   const hold = process.env.HOLD_APPLY === "1";
+  let applyNotBefore: bigint | null = null;
   let steps = 0;
   for (;;) {
     if (hold && steps === N / Number(STEP)) {
@@ -184,16 +185,20 @@ async function main() {
       console.log(`phase Fills seule : dernière exécution lue à ${Math.max(...(ready as number[])).toFixed(1)} s`);
     }
     steps++;
-    // Délai de grâce on-chain entre Fills et Apply (applyNotBefore).
-    if (Number(await read(pool, "phase")) === 2) {
-      if (tFillsMined === null) tFillsMined = now() - t0;
-      const nb = (await read(pool, "applyNotBefore")) as bigint;
-      while (((await pc.getBlock()).timestamp as bigint) < nb) await sleep(2000);
+    // Délai de grâce on-chain entre Fills et Apply : échéance lue dans l'événement FillsComputed
+    // du reçu (les lectures d'état du RPC public peuvent être périmées).
+    if (applyNotBefore !== null) {
+      while (((await pc.getBlock()).timestamp as bigint) <= applyNotBefore) await sleep(2000);
+      applyNotBefore = null;
     }
     const r = await send(op, pool, "settleStep", [STEP], 15_000_000n);
     gas.push(r.gasUsed);
     const settled = viem.parseEventLogs({ abi, logs: r.logs, eventName: "BatchSettled" }).length > 0;
-    if (tFillsMined === null && (settled || Number(await read(pool, "phase")) === 2)) tFillsMined = now() - t0;
+    const fc = viem.parseEventLogs({ abi, logs: r.logs, eventName: "FillsComputed" }) as any[];
+    if (fc.length) {
+      applyNotBefore = fc[0].args.applyNotBefore as bigint;
+      if (tFillsMined === null) tFillsMined = now() - t0;
+    }
     if (settled) break;
   }
   const tSettled = now();
