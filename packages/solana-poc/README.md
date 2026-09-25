@@ -58,6 +58,37 @@ Mêmes résultats qu'en local, sur le vrai réseau :
 | Preuve altérée | refusée |
 | Coût du déploiement (loyer des deux programmes) | ≈ 0,56 SOL devnet |
 
+## Dépense complète : preuve + nullificateur compressé (Light Protocol) — `spend/`, `spend.js`
+
+Programme `spend` (Anchor) : **une seule instruction** qui (1) vérifie la preuve Groth16, (2) lit
+le nullificateur **dans les entrées publiques prouvées** (et pas dans un argument libre), (3) crée
+un compte compressé Light à l'adresse `derive(["nullifier", nullificateur])`. Si l'adresse
+existe déjà, le programme système Light rejette la transaction : c'est l'anti-double-dépense,
+sans loyer permanent.
+
+Environnement local : `light test-validator --no-use-surfpool` (validateur, indexeur Photon
+0.51.2 compilé depuis les sources, prouveur Light compilé depuis `main` : le binaire publié
+2.0.7 cherche ses clés sur un stockage Google supprimé, les clés sont désormais sur
+`d1wbn9ra8wjh7t.cloudfront.net`).
+
+### Résultats locaux (25 septembre 2026) — `results-spend-local.json`
+
+| Mesure | Résultat |
+|---|---|
+| Dépense valide | ✅ **359 814 CU** (26 % du plafond) ; **1 122 octets** : tient dans une transaction classique, sans table d'adresses |
+| Répartition approximative | ≈ 178 600 CU de vérification Groth16 + ≈ 181 000 CU pour la création du nullificateur (CPI Light, preuve de non-existence) |
+| Destinataire modifié | ✅ refusé (« Preuve invalide »), avant toute écriture |
+| Double dépense, 1ʳᵉ barrière | ✅ l'indexeur refuse de fournir une preuve de non-existence (« address already exists ») |
+| Double dépense, 2ᵉ barrière | ✅ rejeu de l'ancienne instruction refusé **on-chain** par le programme système Light (erreur 0x3779) |
+| Coût du nullificateur | ≈ 10 000 lamports (frais des arbres Light), **non bloqués**, en plus des 5 000 lamports de frais de base |
+| Comparaison | nullificateur en compte classique : ≈ 0,001 SOL bloqué à vie (≈ 1 000 000 lamports), **≈ 100 fois plus** |
+
+Coût total d'une dépense ≈ 15 000 lamports ≈ **0,0017 $** (SOL à ≈ 116 $, cours approximatif).
+
+Programme déployé sur devnet : `9KYiaHzahJoob44pnj8WuNKxBnavXUn13AJyDdjtZsKy` (loyer ≈ 0,87 SOL).
+Le test devnet exige un RPC servant l'API ZK Compression (Helius) : le RPC public de devnet ne
+la fournit pas.
+
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
 Premier essai : une preuve valide restait **acceptée avec `recipient`, `relayer` ou `fee`
@@ -79,5 +110,4 @@ modification de chaque entrée publique pour tout nouveau circuit.
 
 - Sunspot n'est pas audité ; sa mise en place (`setup`) est **dangereuse** (déchet toxique non
   détruit) : une cérémonie par circuit est obligatoire avant toute mise en production.
-- Pas encore testé : nullificateurs en comptes compressés (Light Protocol), USDC, relayeur,
-  transactions v1.
+- Pas encore testé : vérification de la racine contre l'arbre du pool, transfert USDC, relayeur.

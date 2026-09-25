@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-25T11:23:26.508Z",
+  "rpc": "http://127.0.0.1:8899",
+  "program": "9KYiaHzahJoob44pnj8WuNKxBnavXUn13AJyDdjtZsKy",
+  "tamperedRecipient": {
+    "sig": "kxT71yq4ZKrq8equGNH3hUZHi2KDobF2X9yWkenKertvzZ6t1SBhmFp3d9eWBSDnSWn4wc7ZM9WkYgjmhKiobKt",
+    "rejected": true
+  },
+  "validSpend": {
+    "sig": "28DZ7SSgewR2EXRCRVUwNAhCcVZ7TZ8mfWBzoaCE82cNWEyBUwDhhXkMCXPZEfPsDpyV4pWdHTfAsFGzXmgJafh7",
+    "ok": true,
+    "computeUnits": 359814,
+    "txBytes": 1122,
+    "usedLookupTable": false,
+    "feeLamports": 5000,
+    "nullifierAccountIndexed": true
+  },
+  "doubleSpendValidityProof": "refusée : failed to get validity proof for hashes : Validation Error: Address 18aGMfCoWcQYasqj5zRS4hRSrGVQLPVBRQuHQmbmg2o already ",
+  "doubleSpendReplay": {
+    "sig": "4ziPf78FnwXQUFFY6KFWRd3QmAPE2dxwumMLnfucLnjiMSgbFTwx4jKVRwqT1tf6zcpyXDkPeuzSuKKAyUJTrhb6",
+    "rejected": true
+  },
+  "totalLamportsSpentByScript": 25280
+}
