@@ -15,15 +15,15 @@ async function readJson(req) { let b = ""; for await (const c of req) { b += c; 
 const send = (res, status, body, headers = {}) => { res.writeHead(status, { "content-type": "application/json", ...headers }); res.end(JSON.stringify(body)); };
 
 /** Facilitateur x402 adossé au relayeur : /supported, /verify, /settle. */
-function facilitatorServer(relayer, { network }) {
+function facilitatorServer(relayer, { network, scheme = SCHEME }) {
   const check = (payload, req) => {
-    if (payload?.scheme !== SCHEME || req?.scheme !== SCHEME) return "schéma non pris en charge";
+    if (payload?.scheme !== scheme || req?.scheme !== scheme) return "schéma non pris en charge";
     if (payload.network !== network || req.network !== network) return "réseau incorrect";
     return null;
   };
   return http.createServer(async (req, res) => {
     try {
-      if (req.method === "GET" && req.url === "/supported") return send(res, 200, { kinds: [{ x402Version: 2, scheme: SCHEME, network }] });
+      if (req.method === "GET" && req.url === "/supported") return send(res, 200, { kinds: [{ x402Version: 2, scheme, network }] });
       if (req.method !== "POST") return send(res, 404, {});
       const { paymentPayload, paymentRequirements } = await readJson(req);
       const bad = check(paymentPayload, paymentRequirements);
@@ -41,7 +41,7 @@ function facilitatorServer(relayer, { network }) {
           : { success: false, errorReason: r.error, network });
       }
       send(res, 404, {});
-    } catch (e) { send(res, 500, { error: String(e.message).slice(0, 200) }); }
+    } catch (e) { send(res, 200, { isValid: false, success: false, invalidReason: `erreur facilitateur : ${String(e.message).slice(0, 160)}`, errorReason: `erreur facilitateur : ${String(e.message).slice(0, 160)}` }); }
   });
 }
 
@@ -64,12 +64,12 @@ function sellerServer({ facilitatorUrl, requirements, resource }) {
 }
 
 /** Client (agent) : GET ; si 402, construit le paiement avec `pay(requirements)` et rejoue. */
-async function fetchWithPayment(url, pay) {
+async function fetchWithPayment(url, pay, scheme = SCHEME) {
   const first = await fetch(url);
   if (first.status !== 402) return { status: first.status, body: await first.json() };
   const { accepts } = await first.json();
-  const reqs = accepts.find((a) => a.scheme === SCHEME);
-  const paymentPayload = { x402Version: 2, scheme: SCHEME, network: reqs.network, payload: await pay(reqs) };
+  const reqs = accepts.find((a) => a.scheme === scheme);
+  const paymentPayload = { x402Version: 2, scheme, network: reqs.network, payload: await pay(reqs) };
   return retryWith(url, paymentPayload, reqs);
 }
 async function retryWith(url, paymentPayload, requirements) {

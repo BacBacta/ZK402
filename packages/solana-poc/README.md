@@ -269,7 +269,40 @@ Dépôts : 1,00 (autre utilisateur), **A = 1,00** et **B = 0,50** (agent), 2,00 
 **Reste à faire**
 - **Remise des notes de sortie à leur destinataire** : il faut chiffrer `(nk, secret, montant)`
   pour lui ; aujourd'hui seul le créateur de la note la connaît.
-- **Relayeur et x402** : les adapter au format join-split.
+
+## x402 au prix exact avec le join-split — `relayer-js.js`, `shielded-wallet.js`, `x402-js-test.js`
+
+Schéma `shielded-joinsplit`. L'agent dépose une fois, puis paie des API à des **prix
+arbitraires**. Le paiement public vaut **exactement** le prix, et la monnaie reste privée dans
+le pool.
+
+**Portefeuille** (`shielded-wallet.js`) :
+- reconstruit l'arbre à partir des **événements on-chain** du programme (`Deposited`,
+  `Transacted`) et vérifie la racine contre le compte `Pool` ;
+- localise ses notes et repère les notes dépensées (nullificateurs publiés) ;
+- choisit 1 ou 2 notes, construit la preuve et garde la monnaie rendue.
+
+**Facilitateur** (`relayer-js.js`) : mêmes contrôles que le relayeur, plus deux :
+- paiement public **= prix exact** demandé par le vendeur ;
+- compte de jetons du vendeur **existant**. Le créer dans la même transaction la ferait
+  dépasser 1 232 octets (mesuré : 1 251) ; le vendeur le crée une fois pour toutes.
+
+### Résultats sur Solana devnet (25 septembre 2026) — `results-x402-joinsplit-devnet.json`
+
+L'agent dépose **1,00** une seule fois ; d'autres utilisateurs déposent 2,00 et 0,70.
+
+| Étape | Résultat |
+|---|---|
+| Synchronisation par événements (3 feuilles) | ✅ racine = racine on-chain |
+| Agent → A `/weather`, **prix 0,137** | ✅ **200** ([transaction](https://explorer.solana.com/tx/ysVjopSCZ8XYSdGmzXriJTzNpxFWvWt1yBBWzxLMs7jkaKxyp1qsRRVycSUBcy7XtXyL1EDFsaarbR8E6h2frLR?cluster=devnet)) ; monnaie privée **0,858** ; 3,3 s de bout en bout (preuve 1,7 s) |
+| Rejeu du même paiement | ✅ 402 « note déjà dépensée » |
+| Sous-paiement (0,100 au lieu de 0,137) | ✅ 402 « montant payé ≠ prix » |
+| Paiement fait pour B, présenté à A | ✅ 402 « ne va pas au vendeur » |
+| Même paiement → B `/price`, **prix 0,042**, payé **avec la monnaie de A** | ✅ **200** ([transaction](https://explorer.solana.com/tx/5xoo4XCMLegYviMC4XnPaV5MYFvKGVHP9VmbuaKVnJBgNuhjJyVR8aRbCzw2Uxsosa18vBkWvphzgBeomVKTJHdX?cluster=devnet)) |
+| Vendeur sans compte de jetons | ✅ 402 propre, note non brûlée |
+| Soldes | A **0,137**, B **0,042**, facilitateur **0,010**, coffre **3,511**, solde privé agent **0,811**, jetons publics de l'agent **0** : tous égaux aux attendus |
+| Portefeuille de l'agent dans les paiements | ✅ absent |
+| Coût par paiement | ≈ 736 700 CU ; 5 000 lamports de frais + ≈ 20 000 pour 2 nullificateurs |
 
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
