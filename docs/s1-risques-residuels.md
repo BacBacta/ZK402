@@ -1,4 +1,4 @@
-# S1 — Mesures et risques résiduels (état au 24 septembre 2026, incréments 1 et 2)
+# S1 — Mesures et risques résiduels (état au 25 septembre 2026, incréments 1 à 3)
 
 > Livrables 5 et 6 du programme [`prompt-s1-points-ouverts.md`](prompt-s1-points-ouverts.md).
 > Modèle de menaces : [`s1-modele-menaces.md`](s1-modele-menaces.md). Spécification :
@@ -48,12 +48,25 @@ donc ΣQUOTE' = ΣQUOTE − p·Σfb + p·Σfs = ΣQUOTE, puisque Σfb = Σfs (pr
 - les propriétés globales sont prouvées pour 3 ordres (déroulement de boucle borné) ; les lemmes,
   eux, valent pour n'importe quel ordre, donc pour tout N par induction sur les ordres.
 
+## 1 ter. Ce que l'incrément 3 a livré (P1)
+
+| Élément | Livré | Preuve / mesure |
+|---|---|---|
+| **Circuit ZK** `packages/circuits/claim` | Noir 1.0.0-beta.19, Poseidon BN254 (compatible circomlib), arbre de profondeur 20 ; **20 551 portes** UltraHonk ; mode **ZK** (`bb -t evm`) | 2 tests Noir, dont le vecteur de référence Poseidon(1, 2), identique en Noir, en JS et en Solidity |
+| **Vérifieur on-chain** | `HonkVerifier` généré par bb 4.0 (23 721 octets, sous la limite EIP-170 grâce à `runs: 1`) | Vraies preuves vérifiées dans les tests et sur Base Sepolia |
+| **Entrée blindée** `ShieldedEntry` | Dépôts par paliers, arbre de Merkle Poseidon on-chain (historique de 64 racines), réclamation anonyme, nullificateurs, relayeur rémunéré, pseudonyme financé par le contrat ; aucun rôle | 7 tests : racine on-chain = racine locale, parcours complet jusqu'au trading, double réclamation refusée, **détournement refusé** (destinataire, relayeur, frais), racine inconnue, classe invalide, frais > allocation |
+| **Pool** | Crédit réservé à l'entrée ; faucet désactivé ; **frais d'ordre anti-spam** versés au finisseur du règlement (incitation au déclenchement) | Tests : `OnlyEntry`, `FaucetDisabled`, frais versés au déclencheur |
+| **Réseau réel (Base Sepolia)** | Entrée `0x29f94f7Cf9995e20D9b8EE6f60161A6CC26F0382`, pool `0xB4081D208C1CF2b3b43EfC9f71b542ef462C9DA4`, vérifieur `0x869768647eC68e5372874584eE7d806Ad267F610` | 2 dépôts, réclamation anonyme `0x03ecabe8…0bfd6` : preuve générée en 1,05 s, **4,08 M de gas** (≈ 0,07 $ au gas de Base mainnet), pseudonyme neuf crédité et financé par le contrat, nullificateur dépensé |
+
 ## 2. Risques résiduels (ce qui n'est PAS résolu)
 
 | # | Risque | Pourquoi ce n'est pas résolu | Borne actuelle | Condition de réouverture / plan |
 |---|---|---|---|---|
 | R1 | **Déchiffreur unique (Teecryptor, un seul TEE Intel TDX)** : s'il est compromis, tous les ordres sont lisibles | Hors de portée de tout protocole construit sur CoFHE : le déchiffreur détient la clé complète | Aucune borne cryptographique sur la confidentialité. **Fonds** : aucun chemin v2 ne dépend d'un clair signé | Migrer vers le réseau de seuil de Fhenix dès qu'il fournit des preuves de déchiffrement correct vérifiables. Réévaluer Zama (seuil MPC) comme alternative |
-| R2 | **Métadonnées** L1 à L4, L6, L11 (qui, quand, combien d'ordres) | P1 est spécifié, pas implémenté | Le contenu des ordres reste caché ; l'identité et le moment ne le sont pas | **Incrément 2** : pool blindé Noir + pseudonymes + lots de taille fixe |
+| R2 | **Métadonnées** | **Largement traité (incrément 3)** : identité du déposant ↔ pseudonyme non associables (ensemble d'anonymat = notes de la classe) | Restent visibles : pseudonyme persistant (L1, L2), moment (L3), nombre d'ordres (L4) | Rotation de pseudonyme via retrait et redépôt (P4) ; remplissage des lots si les données le justifient |
+| R15 | **Pas de retrait** : les fonds déposés dans l'entrée ne peuvent pas encore ressortir | P4 non implémenté | **Testnet uniquement** | Incrément 4 : retraits en deux temps + disjoncteur (spécification § P2.b) |
+| R16 | **Petit ensemble d'anonymat** au démarrage | Peu de dépôts | 1/|S| | Paliers peu nombreux ; délai conseillé entre dépôt et réclamation |
+| R17 | **IP de l'utilisateur** visible par le relayeur ou le nœud RPC | Hors protocole | — | Tor ou relais réseau (hors périmètre on-chain) |
 | R3 | **Le moment de soumission** est visible | **Inhérent** à une chaîne publique | Avec une allocation au prorata (P3), ce moment n'a plus d'effet économique | Incrément 3 (P3) |
 | R4 | ~~Pyth périmé, API Hermes sous clé~~ | **Résolu (incrément 2)** : règle 2 sur 3 avec API3. Pyth reste utilisable si quelqu'un pousse une mise à jour signée | Vivacité assurée par Chainlink + API3 | Clé Hermes optionnelle pour réactiver Pyth |
 | R5 | ~~Choix du moment de déclenchement~~ | **Résolu (incrément 2)** : prix évalué à t_k | Résidu R5′ : le déclencheur peut influer sur la validité d'API3 ou de Pyth-stocké → **≤ 0,5 %** du prix | Supprimable avec un historique on-chain pour API3 ou avec des mises à jour Pyth datées |
@@ -62,7 +75,7 @@ donc ΣQUOTE' = ΣQUOTE − p·Σfb + p·Σfs = ΣQUOTE, puisque Σfb = Σfs (pr
 | R8 | **Crédits de démo**, pas d'actifs réels ; frais CoFHE mainnet inconnus | P4 non traité | — | Incrément 4 : FHERC20 ou ERC-7984 (brouillon), retraits en deux temps + disjoncteur |
 | R9 | **Liquidité** | P5 non traité | — | Incrément 5 : simulation sur les flux des agents de Base |
 | R10 | **Conformité** | P6 non traité | — | Incrément 6 : preuves ZK côté utilisateur, sans clé tierce |
-| R11 | **Parasitage de lot** : remplir les 64 places d'ordres parasites | Une identité = un ordre, mais les identités ne coûtent rien | Coût ≈ 1,2 M de gas par place (≈ 0,02 $) : **faible** | Incrément 2 : frais de soumission et/ou note du pool blindé avec solde minimal |
+| R11 | ~~Parasitage de lot~~ | **Traité (incrément 3)** : chaque ordre exige un compte crédité par une note (dépôt réel) **et** des frais d'ordre | Coût d'une place = palier minimal immobilisé + frais | Calibrer les frais sur mainnet |
 | R12 | ~~Pas de vérification formelle~~ | **Traité (incrément 2)** sur le modèle du circuit (Halmos) | Correspondance modèle ↔ contrat vérifiée par tests, pas par preuve | Plus tard : équivalence prouvée (génération du contrat depuis le modèle, ou vérification du bytecode) |
 | R13 | **v1 vulnérable** (rebouclage) déployée sur Base Sepolia (crédits de démo uniquement) | Prototype de mesure | Aucun fonds réel ; contrat marqué « ne pas réutiliser » | Ne jamais réutiliser la v1 |
 | R14 | v2 `0x7955…Bf04` déployée **avant** le correctif anti-rebouclage | Historique | Crédits de démo uniquement | Utiliser `0xb482…c14B` (corrigée) |

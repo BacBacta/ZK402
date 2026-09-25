@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-25T02:26:26.209Z",
+  "network": "base-sepolia",
+  "poseidonT3": "0xa429c9973421BB512D63fA53bBe0BF153651d0B8",
+  "zkTranscriptLib": "0x509C088c8F84f28b12b3cD1A4Ca1D05F66644c34",
+  "honkVerifier": "0x869768647eC68e5372874584eE7d806Ad267F610",
+  "pool": "0xB4081D208C1CF2b3b43EfC9f71b542ef462C9DA4",
+  "entry": "0x29f94f7Cf9995e20D9b8EE6f60161A6CC26F0382",
+  "depositGas": "voir journal",
+  "claimTx": "0x03ecabe8b2b144224b0be30f53ba1bd957072f8f21192bf5131b4a159150bfd6",
+  "claimGas": "4083468",
+  "proveSeconds": 1.05,
+  "pseudonym": "0x902bdc557a68a07D799A21FC00E6E481d37774EF",
+  "pseudonymEth": "0.00015",
+  "pseudonymCreditedInPool": true,
+  "nullifierSpent": true
+}

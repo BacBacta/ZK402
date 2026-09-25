@@ -162,7 +162,7 @@ retraits (P4) : le délai et la file d'attente, pas de perte.
 
 ---
 
-## P1 — Métadonnées : conception (implémentation à l'incrément 2)
+## P1 — Métadonnées : conception, puis implémentation (incrément 3)
 
 ### Définition visée
 **Jeu IND-META.**
@@ -234,3 +234,49 @@ les réserves réelles (P4).
 - l'acheteur paie exactement `fill × prix`.
 
 Résultats : voir `docs/s1-risques-residuels.md`.
+
+---
+
+## P1 — Implémentation (incrément 3)
+
+**Construction implémentée** (option c, sous une forme adaptée à une contrainte de CoFHE découverte
+en lisant le TaskManager) : la signature du vérifieur d'entrées lie chaque chiffré au couple
+**(expéditeur, contrat)**. Un relayeur ne peut donc pas soumettre un ordre chiffré à la place du
+trader. C'est le **pseudonyme lui-même** qui doit envoyer ses ordres, d'où l'allocation de gas
+versée par le contrat.
+
+| Étape | Qui | Ce qui est public | Ce qui est caché |
+|---|---|---|---|
+| 1. **Dépôt** (`ShieldedEntry.deposit`) | Adresse A | A, la classe (palier fixe), l'engagement C = H(nk, secret) | nk, secret |
+| 2. **Réclamation** (`claim`) | N'importe quel relayeur R | La classe, le nullificateur, le pseudonyme P, R, les frais | **Quelle note** (donc A) : preuve ZK d'appartenance à l'arbre |
+| 3. **Financement de P** | Le contrat | P reçoit `stipend − fee` en ETH **du contrat** | Lien A ↔ P |
+| 4. **Crédit** (`pool.credit`) | Le contrat d'entrée uniquement | P a un compte, montant de la classe | Solde ensuite chiffré (FHE) |
+| 5. **Ordres** | P | P a soumis un ordre dans le lot k | Sens, quantité (FHE) |
+
+**Propriété obtenue (IND-META restreinte)** : pour un observateur de toute la chaîne, P est
+associable à **n'importe quelle** note non dépensée de la même classe déposée avant la réclamation.
+L'avantage est de ≤ 1/|S| (S = notes éligibles), sous H1–H4 et sous la sécurité de UltraHonk en mode
+ZK (`bb -t evm`).
+
+**Anti-détournement** : `recipient`, `relayer` et `fee` sont des entrées publiques de la preuve. Une
+transaction interceptée ne peut pas être rejouée vers un autre destinataire (testé : 3 variantes
+refusées).
+
+**Registre de confiance (P1)** :
+
+| Acteur | Voit | Peut | Changement |
+|---|---|---|---|
+| Relayeur | Les entrées publiques de la réclamation, et l'**adresse IP** de l'utilisateur s'il la reçoit directement | Refuser de relayer (censure) ; ne peut ni détourner ni lier | Nouveau, **sans pouvoir** : tout le monde peut relayer, P peut aussi se faire relayer par n'importe qui |
+| Observateur | Dépôts (A, classe), réclamations (P, classe) | Corréler par le **moment** (dépôt puis réclamation immédiate) | Borné par l'ensemble d'anonymat et le délai choisi par l'utilisateur |
+
+**Limites assumées (non résolues ici)** :
+- **P est un pseudonyme persistant** : ses ordres sont associables entre eux d'un lot à l'autre. Pour
+  en changer, il faut retirer puis redéposer : **P4 (retraits) n'est pas encore implémenté**. Les
+  fonds déposés ne peuvent donc pas encore ressortir : ce système est réservé au testnet.
+- **Montants par paliers** : un pseudonyme qui réclame plusieurs notes révèle la somme de ses
+  paliers (entrées publiques). Ensuite, ses soldes et ses exécutions sont chiffrés.
+- **Nombre d'ordres par lot (L4)** : toujours visible. Le remplissage par ordres factices n'est pas
+  implémenté : il exigerait des pseudonymes de remplissage dont le financeur connaîtrait les
+  factices. Son intérêt est limité tant que les participants sont déjà pseudonymes.
+- **Moment (L3)** : inhérent.
+- **Réseau** : l'IP n'est pas protégée par le protocole (utiliser Tor ou un relais réseau).
