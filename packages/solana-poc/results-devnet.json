@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-25T10:38:23.008Z",
+  "rpc": "https://api.devnet.solana.com",
+  "verifier": "FM8VTpzpYqd1XJyWycRuSSDng44wp21Cm6UjuYLY2V7L",
+  "poseidonCheck": "7XVNVBqDuZgzmXJUrFtszCnYhVnb8criRTHAJ5K2isTR",
+  "poseidon": {
+    "sig": "4ZHkcMTZaBZAbXFZMrLn15ybyUnqzNgeDAX5pAF77qP7ygPCoMxGuHZYPtocV3bAT5iyda73bc38EwrChY6ftx5h",
+    "ok": true,
+    "computeUnits": 69181,
+    "cuLogs": [
+      "Program consumption: 1386654 units remaining",
+      "Program consumption: 1367433 units remaining"
+    ],
+    "h12Matches": true,
+    "rootMatchesCircuit": true,
+    "nullifierMatchesCircuit": true
+  },
+  "validProof": {
+    "sig": "5bYzZo1KrgDZsRhdf17SQfygGHoSoh5uwJqF59zRtbGVUKbpkskWaF5s1gKgdgUgjSm7ZhVeWtFs8otkbeMdFqzu",
+    "ok": true,
+    "computeUnits": 178648,
+    "txBytes": 706,
+    "proofBytes": 324,
+    "publicWitnessBytes": 172,
+    "feeLamports": 5000,
+    "confirmMs": 542
+  },
+  "tamperedInputs": {
+    "root": {
+      "sig": "jYdCFqJqoZyz8sxF1UDrGVDyC4tSNcSLvXk1S1DUHkiu2awe96AUMgk3en1YtAnyMFVffFBVxRQvsJCt4Skm1Gu",
+      "rejected": true
+    },
+    "nullifier": {
+      "sig": "4RQUgiDGsefiCSjDVxW5ELmPPwykwrk9JA476ZoHc7TsHbz1wSd2k1e4Bfi38LN8DjfLps4arjwTBEzEZBAprQ1S",
+      "rejected": true
+    },
+    "recipient": {
+      "sig": "4sYdyPFia8BAirnwgL7khHH69ns7V1uDhpCx6qjfYZF98LJs5xiCiPen9wj1RR3g8MFtw2EkfAk3dBmFJXKMbSMp",
+      "rejected": true
+    },
+    "relayer": {
+      "sig": "3rod9BJgXbDGF3odbPeFnA5YBsqdXGrizvxja3FBQ69L2wGfwuKEtZNGQ7bFG2jc4mw3xJ5iXVx4fAfwmVtXp578",
+      "rejected": true
+    },
+    "fee": {
+      "sig": "3EawJmqgWDRvJvudyQNe5KCcDBRhZecRodD1tRDeqgmwgc3FqpGhtktm5BEhkxSnCxdo5wMiqPpyzjwBCE3xMG6w",
+      "rejected": true
+    }
+  },
+  "tamperedProof": {
+    "sig": "fYabegG1SMGk5w8qXMy5iRGX1u9pFjNcWDqSy3zq6eJ1766Jn1N9mYk3RPYxcuPkK2CfQChcHWBWBkiWcUYmkcT",
+    "rejected": true
+  }
+}

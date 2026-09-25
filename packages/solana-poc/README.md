@@ -44,6 +44,20 @@ local mais **inactive sur devnet** au 25/09/2026 : sans ce drapeau, le local dif
 | Preuve altérée | refusée |
 | Chaque entrée publique modifiée (root, nullifier, recipient, relayer, fee) | **refusée (5/5)** après correction |
 
+## Résultats sur Solana devnet (Agave 4.3.0, 25 septembre 2026) — `results-devnet.json`
+
+Mêmes résultats qu'en local, sur le vrai réseau :
+
+| Mesure | Devnet |
+|---|---|
+| Programme vérifieur | `FM8VTpzpYqd1XJyWycRuSSDng44wp21Cm6UjuYLY2V7L` |
+| Programme de contrôle Poseidon | `7XVNVBqDuZgzmXJUrFtszCnYhVnb8criRTHAJ5K2isTR` |
+| Poseidon natif = circuit | **Identique** (H(1,2), racine, nullificateur) |
+| Vérification de la preuve valide | ✅ **178 648 CU**, 706 o, 5 000 lamports, confirmée en ≈ 0,5 s ([transaction](https://explorer.solana.com/tx/5bYzZo1KrgDZsRhdf17SQfygGHoSoh5uwJqF59zRtbGVUKbpkskWaF5s1gKgdgUgjSm7ZhVeWtFs8otkbeMdFqzu?cluster=devnet)) |
+| 5 entrées publiques modifiées, une par une | **refusées (5/5)** |
+| Preuve altérée | refusée |
+| Coût du déploiement (loyer des deux programmes) | ≈ 0,56 SOL devnet |
+
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
 Premier essai : une preuve valide restait **acceptée avec `recipient`, `relayer` ou `fee`
@@ -65,7 +79,5 @@ modification de chaque entrée publique pour tout nouveau circuit.
 
 - Sunspot n'est pas audité ; sa mise en place (`setup`) est **dangereuse** (déchet toxique non
   détruit) : une cérémonie par circuit est obligatoire avant toute mise en production.
-- Mesures sur validateur local (même moteur d'exécution que devnet) ; la mesure devnet attend
-  des SOL de test (faucet public limité).
 - Pas encore testé : nullificateurs en comptes compressés (Light Protocol), USDC, relayeur,
   transactions v1.
