@@ -65,6 +65,15 @@ async function refreshOracles(o: any, cl = CL_PRICE, py = PY_PRICE, a3 = A3_PRIC
   await o.py.setStored(py, py / 1000n, -8, now);
 }
 
+/** Prix frais à l'instant présent (sans avancer le temps) : requis pour ouvrir un lot,
+ *  car le plafond de séquestre est fixé à la première soumission. */
+async function pricesNow(o: any) {
+  const now = BigInt(await time.latest());
+  await o.cl.push(CL_PRICE, now);
+  await o.a3.push(A3_PRICE, now);
+  await o.py.setStored(PY_PRICE, PY_PRICE / 1000n, -8, now);
+}
+
 async function closeBatch(pool: any, k: bigint) {
   const deadline = await pool.batchDeadline(k);
   const now = BigInt(await time.latest());
@@ -229,6 +238,7 @@ describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle 2 sur 3 à
     const a = o.signers[1];
     await o.pool.connect(a).claimFaucet();
     await closeBatch(o.pool, 0n); // lot 0 vide
+    await pricesNow(o);
     await submit(o.pool, o.poolAddress, a, true, 1n); // lot 1
     expect(await o.pool.orderCount(1n)).to.equal(1n);
     await expect(o.pool.startSettlement(0, [])).to.emit(o.pool, "BatchSkippedEmpty").withArgs(0n);
@@ -243,6 +253,7 @@ describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle 2 sur 3 à
     const a = o.signers[1];
     await expect(submit(o.pool, o.poolAddress, a, true, 1n)).to.be.revertedWithCustomError(o.pool, "AlreadySubmitted");
     await closeBatch(o.pool, 0n);
+    await pricesNow(o);
     await submit(o.pool, o.poolAddress, a, false, 1n);
     expect(await o.pool.orderCount(1n)).to.equal(1n);
   });
@@ -264,6 +275,48 @@ describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle 2 sur 3 à
     await hre.cofhe.mocks.expectPlaintext(await o.pool.lastFillOf(attacker.address), 0n);
     await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(seller.address), FB);
     await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(attacker.address), FQ);
+  });
+
+  it("P3 deux vitesses : la consignation est prélevée dès la soumission (acheteur : q × plafond)", async function () {
+    const o = await loadFixture(deployFixture);
+    const [a, b] = [o.signers[1], o.signers[2]];
+    await o.pool.connect(a).claimFaucet();
+    await o.pool.connect(b).claimFaucet();
+    await submit(o.pool, o.poolAddress, a, true, 10n);
+    const cap = await o.pool.batchCap(0n);
+    expect(cap).to.equal((POOL_PRICE * 10_300n) / 10_000n);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(a.address), FQ - 10n * cap);
+    await submit(o.pool, o.poolAddress, b, false, 4n);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(b.address), FB - 4n);
+    await refreshOracles(o);
+    await closeBatch(o.pool, 0n);
+    await start(o.pool, o);
+    await settleAll(o.pool, o.signers[3]);
+    // a achète 4 au prix p : rend la consignation non utilisée ; b vend 4 entièrement.
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(a.address), FB + 4n);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(a.address), FQ - 4n * POOL_PRICE);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(b.address), FB - 4n);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(b.address), FQ + 4n * POOL_PRICE);
+  });
+
+  it("P3 deux vitesses : prix de clôture au-dessus du plafond → aucune exécution, consignations rendues", async function () {
+    const o = await loadFixture(deployFixture);
+    const [a, b] = [o.signers[1], o.signers[2]];
+    await o.pool.connect(a).claimFaucet();
+    await o.pool.connect(b).claimFaucet();
+    await submit(o.pool, o.poolAddress, a, true, 10n);
+    await submit(o.pool, o.poolAddress, b, false, 10n);
+    // Le marché monte de 5 % (> marge de 3 %) avant la clôture.
+    await refreshOracles(o, CL_PRICE * 105n / 100n, PY_PRICE * 105n / 100n, A3_PRICE * 105n / 100n);
+    await closeBatch(o.pool, 0n);
+    await start(o.pool, o);
+    expect(await o.pool.settlementPrice()).to.be.gt(await o.pool.batchCap(0n));
+    await settleAll(o.pool, o.signers[3]);
+    for (const w of [a, b]) {
+      await hre.cofhe.mocks.expectPlaintext(await o.pool.lastFillOf(w.address), 0n);
+      await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(w.address), FB);
+      await hre.cofhe.mocks.expectPlaintext(await o.pool.quoteBalanceOf(w.address), FQ);
+    }
   });
 
   it("P3 : soumission à preuve unique (sens + quantité vérifiés ensemble)", async function () {
@@ -301,15 +354,18 @@ describe("SealedBatchPoolV2 — P7 (aucun opérateur) et P2.a (règle 2 sur 3 à
 // --------------------------------------------------------------------------------------------
 type Acc = { base: bigint; quote: bigint };
 
-function referenceBatch(accs: Acc[], orders: { t: number; buy: boolean; q: bigint }[], p: bigint) {
+/** Modèle de référence (P3, deux vitesses) : couverture À LA SOUMISSION, acheteur au prix
+ *  plafond `cap` (consignation), vendeur sur sa BASE ; si p > cap, aucune exécution. */
+function referenceBatch(accs: Acc[], orders: { t: number; buy: boolean; q: bigint }[], p: bigint, cap: bigint) {
+  const MAX_QTY = 10n ** 12n;
   const eff = orders.map((o) => {
     const a = accs[o.t];
-    const ok = o.buy ? a.quote >= o.q * p : a.base >= o.q;
+    const ok = (o.buy ? a.quote >= o.q * cap : a.base >= o.q) && o.q <= MAX_QTY;
     return ok ? o.q : 0n;
   });
   const tb = orders.reduce((s, o, i) => s + (o.buy ? eff[i] : 0n), 0n);
   const ts = orders.reduce((s, o, i) => s + (o.buy ? 0n : eff[i]), 0n);
-  let rb = tb < ts ? tb : ts;
+  let rb = p > cap ? 0n : tb < ts ? tb : ts;
   let rs = rb;
   const fills: bigint[] = [];
   orders.forEach((o, i) => {
@@ -352,9 +408,8 @@ describe("SealedBatchPoolV2 — propriétés (lots aléatoires vs modèle de ré
     await refreshOracles(o);
     await closeBatch(pool, 0n);
     await start(pool, o, signers[25]);
-    expect(await pool.scanSize()).to.equal(32n);
     await settleAll(pool, signers[26], 3);
-    const fills = referenceBatch(accs, orders, POOL_PRICE);
+    const fills = referenceBatch(accs, orders, POOL_PRICE, await pool.batchCap(0n));
     for (let i = 0; i < orders.length; i++) {
       await hre.cofhe.mocks.expectPlaintext(await pool.lastFillOf(traders[i].address), fills[i]);
       await hre.cofhe.mocks.expectPlaintext(await pool.baseBalanceOf(traders[i].address), accs[i].base);
@@ -402,7 +457,7 @@ describe("SealedBatchPoolV2 — propriétés (lots aléatoires vs modèle de ré
         }
         await start(pool, o, signers[19]);
         await settleAll(pool, signers[18], 1 + Math.floor(r() * 4));
-        const fills = referenceBatch(accs, orders, p);
+        const fills = referenceBatch(accs, orders, p, await pool.batchCap(batch));
         for (let i = 0; i < orders.length; i++) {
           await hre.cofhe.mocks.expectPlaintext(await pool.lastFillOf(traders[orders[i].t].address), fills[i]);
         }

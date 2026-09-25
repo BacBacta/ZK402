@@ -41,6 +41,10 @@ contract SealedBatchPoolV2 {
     ///         packages/formal). Avec MAX_QTY · MAX_POOL_PRICE < 2^64, q·prix ne reboucle jamais.
     uint64 public constant MAX_QTY = 1e12;
     uint64 public constant MAX_POOL_PRICE = 1e6;
+    /// @notice Marge du prix plafond d'un lot au-dessus du prix de référence à sa première
+    ///         soumission (points de base). Les acheteurs consignent quantité × plafond ; si le
+    ///         prix de clôture dépasse le plafond, aucun ordre du lot n'est exécuté.
+    uint256 public constant CAP_BAND_BPS = 300;
 
     IAggregatorV3 public immutable chainlinkFeed; // avec historique de rounds
     IAggregatorV3 public immutable api3Feed; // Api3ReaderProxyV1 (sans historique)
@@ -68,11 +72,15 @@ contract SealedBatchPoolV2 {
     uint64 public immutable batchDuration;
 
     // ------------------------------------------------------------------ état
+    /// @dev P3 « règlement à deux vitesses » : tout ce qui ne dépend pas du résultat du lot est
+    ///      calculé À LA SOUMISSION (couverture, consignation au prix plafond, préfixe cumulé).
     struct Order {
         address trader;
         ebool isBuy;
-        euint64 qty;
-        euint64 eff;
+        euint64 eff; // quantité retenue (0 si non couverte)
+        euint64 prefix; // somme des quantités retenues du même sens soumises avant (exclusive)
+        euint64 lockQuote; // QUOTE consigné (acheteur : eff × plafond ; vendeur : 0)
+        euint64 fill; // exécution (calculée à la clôture)
     }
 
     mapping(address => euint64) private _base;
@@ -82,6 +90,10 @@ contract SealedBatchPoolV2 {
     /// @dev batchId + 1 du dernier lot où le trader a soumis (un ordre par lot et par trader).
     mapping(address => uint256) private _submittedBatchPlus1;
     mapping(uint256 => Order[]) private _orders;
+    /// @notice Prix plafond (unités du pool) de chaque lot, fixé à sa première soumission.
+    mapping(uint256 => uint64) public batchCap;
+    mapping(uint256 => euint64) private _totB;
+    mapping(uint256 => euint64) private _totS;
     /// @notice Frais accumulés par lot (payés au finisseur du règlement).
     mapping(uint256 => uint256) public batchFees;
 
@@ -100,30 +112,23 @@ contract SealedBatchPoolV2 {
     /// @notice Prochain lot à régler (les lots se règlent strictement dans l'ordre).
     uint256 public nextToSettle;
 
-    /// @dev Règlement en phases (P3) : Eff (quantités effectives, O(N)), Up / Down (scan de
-    ///      Blelloch des sommes préfixes par sens, profondeur O(log N)), Fills (exécutions,
-    ///      toutes INDÉPENDANTES les unes des autres). Résultat identique au FIFO séquentiel :
-    ///      reste_i = max(0, M − Σ_{j<i, même sens} eff_j).
+    /// @dev Règlement (P3, deux vitesses) :
+    ///      Fills : exécution_i = min(eff_i, max(0, M − préfixe_i)), 4 opérations rapides par ordre,
+    ///              aucune multiplication : c'est le chemin critique de la lecture ;
+    ///      Apply : coût = exécution × prix (multiplication), remboursement de la consignation
+    ///              non utilisée, mises à jour des soldes, soumis APRÈS toutes les exécutions.
     enum Phase {
         Idle,
-        Eff,
-        Up,
-        Down,
-        Fills
+        Fills,
+        Apply
     }
     Phase public phase;
     uint256 public cursor;
-    /// @notice Niveau courant du scan et taille paddée (puissance de 2 ≥ nombre d'ordres).
-    uint256 public scanLevel;
-    uint256 public scanSize;
     uint64 public settlementPrice;
     euint64 private _price;
     euint64 private _zero;
     euint64 private _maxQty;
     euint64 private _matched;
-    /// @dev Tableaux du scan : parts acheteuses / vendeuses, puis préfixes exclusifs par sens.
-    euint64[] private _sb;
-    euint64[] private _ss;
 
     // ------------------------------------------------------------------ événements / erreurs
     event OrderSubmitted(uint256 indexed batchId, address indexed trader, uint256 index);
@@ -158,6 +163,7 @@ contract SealedBatchPoolV2 {
     error NoEntry();
     error UnknownNoteOut();
     error BadDecryption();
+    error NoPriceCap();
 
     struct OracleConfig {
         address chainlinkFeed;
@@ -349,8 +355,56 @@ contract SealedBatchPoolV2 {
         FHE.allowThis(isBuy);
         FHE.allowThis(qty);
         FHE.allowSender(qty);
-        _orders[k].push(Order({trader: msg.sender, isBuy: isBuy, qty: qty, eff: _zero}));
+
+        uint64 cap = batchCap[k];
+        if (cap == 0) {
+            cap = _openBatch(k);
+        }
+
+        (euint64 eff, euint64 lockQ) = _escrow(msg.sender, isBuy, qty, cap);
+        euint64 prefix = _accumulate(k, isBuy, eff);
+        _orders[k].push(Order({trader: msg.sender, isBuy: isBuy, eff: eff, prefix: prefix, lockQuote: lockQ, fill: _zero}));
         emit OrderSubmitted(k, msg.sender, _orders[k].length - 1);
+    }
+
+    /// @dev Couverture et consignation (hors chemin critique) : l'acheteur consigne q × plafond
+    ///      en QUOTE, le vendeur q en BASE. Circuit constant (le sens reste chiffré).
+    function _escrow(address t, ebool isBuy, euint64 qty, uint64 cap) internal returns (euint64 eff, euint64 lockQ) {
+        euint64 bBal = _base[t];
+        euint64 qBal = _quote[t];
+        euint64 lockB = FHE.select(isBuy, _zero, qty);
+        lockQ = FHE.select(isBuy, FHE.mul(qty, FHE.asEuint64(cap)), _zero);
+        ebool ok = FHE.and(FHE.and(FHE.gte(bBal, lockB), FHE.gte(qBal, lockQ)), FHE.lte(qty, _maxQty));
+        eff = FHE.select(ok, qty, _zero);
+        lockB = FHE.select(ok, lockB, _zero);
+        lockQ = FHE.select(ok, lockQ, _zero);
+        _setBalances(t, FHE.sub(bBal, lockB), FHE.sub(qBal, lockQ));
+        FHE.allowThis(eff);
+        FHE.allowThis(lockQ);
+    }
+
+    /// @dev Préfixe exclusif du même sens, puis totaux du lot (chaîne étalée sur la fenêtre du lot).
+    function _accumulate(uint256 k, ebool isBuy, euint64 eff) internal returns (euint64 prefix) {
+        euint64 tb = _totB[k];
+        euint64 ts = _totS[k];
+        prefix = _allowed(FHE.select(isBuy, tb, ts));
+        euint64 buyPart = FHE.select(isBuy, eff, _zero);
+        _totB[k] = _allowed(FHE.add(tb, buyPart));
+        _totS[k] = _allowed(FHE.add(ts, FHE.sub(eff, buyPart)));
+    }
+
+    /// @dev Première soumission du lot k : fixe son prix plafond = référence courante (règle
+    ///      2 sur 3 évaluée maintenant) × (1 + CAP_BAND_BPS) et initialise ses totaux.
+    function _openBatch(uint256 k) internal returns (uint64 cap) {
+        (uint80 latestId,,,,) = chainlinkFeed.latestRoundData();
+        (bool ok,, uint64 p) = aggregate(chainlinkAt(block.timestamp, latestId), _pythStoredAt(block.timestamp), api3At(block.timestamp));
+        if (!ok) revert NoPriceCap();
+        uint256 c = uint256(p) * (10_000 + CAP_BAND_BPS) / 10_000;
+        if (c == 0 || c > MAX_POOL_PRICE) revert NoPriceCap();
+        cap = uint64(c);
+        batchCap[k] = cap;
+        _totB[k] = _zero;
+        _totS[k] = _zero;
     }
 
     // ------------------------------------------------------------------ prix (règle publique R)
@@ -500,16 +554,13 @@ contract SealedBatchPoolV2 {
             return false;
         }
 
-        phase = Phase.Eff;
+        phase = Phase.Fills;
         cursor = 0;
         settlementPrice = p;
         _price = FHE.asEuint64(p);
         FHE.allowThis(_price);
-        uint256 size = 1;
-        while (size < _orders[k].length) size <<= 1;
-        scanSize = size;
-        delete _sb;
-        delete _ss;
+        // Prix de clôture au-dessus du plafond : aucune exécution (les consignations seront rendues).
+        _matched = p > batchCap[k] ? _zero : _allowed(FHE.min(_totB[k], _totS[k]));
         emit SettlementStarted(k, p, _orders[k].length, cl8, py8, a8);
         return true;
     }
@@ -521,105 +572,34 @@ contract SealedBatchPoolV2 {
         }
     }
 
-    /// @notice Fait progresser le règlement en cours d'au plus `maxItems` unités de travail
-    ///         (un ordre en phases Eff et Fills, un bloc du scan en phases Up et Down).
-    ///         N'importe qui peut l'appeler. Renvoie true quand le lot est réglé.
+    /// @notice Fait progresser le règlement en cours d'au plus `maxItems` ordres (phase Fills,
+    ///         puis phase Apply). N'importe qui peut l'appeler. Renvoie true quand le lot est réglé.
     function settleStep(uint256 maxItems) external returns (bool done) {
         if (phase == Phase.Idle) revert NoSettlementInProgress();
         uint256 k = nextToSettle;
         Order[] storage orders = _orders[k];
         uint256 n = orders.length;
-        uint256 size = scanSize;
         uint256 budget = maxItems;
-
         while (budget > 0) {
-            if (phase == Phase.Eff) {
-                if (cursor < n) {
-                    _effective(orders[cursor]);
-                    cursor++;
-                    budget--;
-                    continue;
-                }
-                // Padding jusqu'à une puissance de 2 (valeurs nulles).
-                while (_sb.length < size) {
-                    _sb.push(_zero);
-                    _ss.push(_zero);
-                }
-                phase = size > 1 ? Phase.Up : Phase.Down;
-                scanLevel = 0;
-                cursor = 0;
-                if (size == 1) _finishUpSweep(size);
-            } else if (phase == Phase.Up) {
-                uint256 stride = 2 << scanLevel;
-                uint256 half = 1 << scanLevel;
-                uint256 i2 = cursor * stride + stride - 1;
-                uint256 i1 = i2 - half;
-                _sb[i2] = _allowed(FHE.add(_sb[i2], _sb[i1]));
-                _ss[i2] = _allowed(FHE.add(_ss[i2], _ss[i1]));
-                budget--;
-                cursor++;
-                if (cursor * stride >= size) {
+            if (cursor == n) {
+                if (phase == Phase.Fills) {
+                    phase = Phase.Apply;
                     cursor = 0;
-                    if (stride == size) {
-                        _finishUpSweep(size);
-                        phase = Phase.Down;
-                    } else {
-                        scanLevel++;
-                    }
-                }
-            } else if (phase == Phase.Down) {
-                if (size == 1) {
-                    phase = Phase.Fills;
-                    cursor = 0;
-                    continue;
-                }
-                uint256 stride = 2 << scanLevel;
-                uint256 half = 1 << scanLevel;
-                uint256 i2 = cursor * stride + stride - 1;
-                uint256 i1 = i2 - half;
-                (euint64 tb, euint64 ts) = (_sb[i1], _ss[i1]);
-                _sb[i1] = _sb[i2];
-                _ss[i1] = _ss[i2];
-                _sb[i2] = _allowed(FHE.add(tb, _sb[i2]));
-                _ss[i2] = _allowed(FHE.add(ts, _ss[i2]));
-                budget--;
-                cursor++;
-                if (cursor * stride >= size) {
-                    cursor = 0;
-                    if (scanLevel == 0) phase = Phase.Fills;
-                    else scanLevel--;
-                }
-            } else {
-                // Phase.Fills
-                if (cursor < n) {
-                    _fillScan(orders[cursor], cursor);
-                    cursor++;
-                    budget--;
                     continue;
                 }
                 return _closeBatch(k);
             }
+            if (phase == Phase.Fills) _fill(orders[cursor]);
+            else _apply(orders[cursor]);
+            cursor++;
+            budget--;
         }
+        if (cursor == n && phase == Phase.Apply) return _closeBatch(k);
         return false;
-    }
-
-    /// @dev Fin de la remontée : racines = totaux par sens ; M = min ; racines remises à zéro
-    ///      (début de la redescente → préfixes EXCLUSIFS). Niveau de départ de la redescente.
-    function _finishUpSweep(uint256 size) internal {
-        _matched = FHE.min(_sb[size - 1], _ss[size - 1]);
-        FHE.allowThis(_matched);
-        _sb[size - 1] = _zero;
-        _ss[size - 1] = _zero;
-        uint256 lvl = 0;
-        while ((2 << lvl) < size) lvl++;
-        scanLevel = lvl;
-        cursor = 0;
     }
 
     function _closeBatch(uint256 k) internal returns (bool) {
         delete _orders[k];
-        delete _sb;
-        delete _ss;
         phase = Phase.Idle;
         cursor = 0;
         nextToSettle = k + 1;
@@ -639,43 +619,27 @@ contract SealedBatchPoolV2 {
         return v;
     }
 
-    /// @dev Phase Eff : quantité effective (couverture exacte, bornes anti-rebouclage) et parts
-    ///      par sens. Aucune dépendance entre ordres.
-    function _effective(Order storage o) internal {
-        euint64 need = FHE.mul(o.qty, _price);
-        ebool okBuy = FHE.gte(_quote[o.trader], need);
-        ebool okSell = FHE.gte(_base[o.trader], o.qty);
-        ebool ok = FHE.and(FHE.select(o.isBuy, okBuy, okSell), FHE.lte(o.qty, _maxQty));
-        euint64 eff = FHE.select(ok, o.qty, _zero);
-        euint64 buyPart = FHE.select(o.isBuy, eff, _zero);
-        euint64 sellPart = FHE.sub(eff, buyPart);
-        o.eff = eff;
-        FHE.allowThis(eff);
-        _sb.push(_allowed(buyPart));
-        _ss.push(_allowed(sellPart));
+    /// @dev Chemin critique : 4 opérations, aucune multiplication, aucune dépendance entre ordres.
+    ///      reste = max(0, M − préfixe) ; exécution = min(eff, reste). Lisible par le trader.
+    function _fill(Order storage o) internal {
+        euint64 rem = FHE.select(FHE.gte(_matched, o.prefix), FHE.sub(_matched, o.prefix), _zero);
+        euint64 fill = FHE.min(o.eff, rem);
+        o.fill = fill;
+        _lastFill[o.trader] = fill;
+        FHE.allowThis(fill);
+        FHE.allow(fill, o.trader);
     }
 
-    /// @dev Phase Fills : reste = max(0, M − préfixe exclusif du même sens) ; exécution =
-    ///      min(eff, reste). Aucune dépendance entre ordres (parallélisable par le coprocesseur).
-    function _fillScan(Order storage o, uint256 i) internal {
-        euint64 prefix = FHE.select(o.isBuy, _sb[i], _ss[i]);
-        euint64 rem = FHE.select(FHE.gte(_matched, prefix), FHE.sub(_matched, prefix), _zero);
-        euint64 fill = FHE.min(o.eff, rem);
-        euint64 cost = FHE.mul(fill, _price);
-
-        // P3 : 12 opérations au lieu de 14 (le coprocesseur est limité par son DÉBIT, mesuré).
-        // Achat : BASE + fill, QUOTE − cost ; vente : BASE − fill, QUOTE + cost. Les deux
-        // branches sont calculées (circuit constant) ; la branche non retenue peut reboucler,
-        // elle est écartée par select. La branche retenue ne reboucle pas (couverture, bornes).
+    /// @dev Hors chemin critique : coût, remboursement de la consignation non utilisée, soldes.
+    ///      Achat : BASE += fill ; QUOTE += lockQuote − coût.
+    ///      Vente : BASE += eff − fill (non exécuté rendu) ; QUOTE += coût.
+    ///      Aucun rebouclage : coût = fill × prix ≤ eff × plafond = lockQuote (prix ≤ plafond, sinon M = 0).
+    function _apply(Order storage o) internal {
+        euint64 cost = FHE.mul(o.fill, _price);
         address t = o.trader;
-        euint64 bB = _base[t];
-        euint64 qB = _quote[t];
-        euint64 b = FHE.select(o.isBuy, FHE.add(bB, fill), FHE.sub(bB, fill));
-        euint64 q = FHE.select(o.isBuy, FHE.sub(qB, cost), FHE.add(qB, cost));
-        _setBalances(t, b, q);
-        _lastFill[t] = fill;
-        FHE.allowThis(fill);
-        FHE.allow(fill, t);
+        euint64 dBase = FHE.select(o.isBuy, o.fill, FHE.sub(o.eff, o.fill));
+        euint64 dQuote = FHE.select(o.isBuy, FHE.sub(o.lockQuote, cost), cost);
+        _setBalances(t, FHE.add(_base[t], dBase), FHE.add(_quote[t], dQuote));
     }
 
     function _setBalances(address t, euint64 b, euint64 q) internal {
