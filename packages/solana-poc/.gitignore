@@ -1,0 +1,6 @@
+node_modules/
+**/target/*
+!claim/target/claim.vk
+!claim/target/claim.proof
+!claim/target/claim.pw
+*-keypair.json

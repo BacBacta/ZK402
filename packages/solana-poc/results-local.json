@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-25T10:33:51.940Z",
+  "rpc": "http://127.0.0.1:8899",
+  "verifier": "FM8VTpzpYqd1XJyWycRuSSDng44wp21Cm6UjuYLY2V7L",
+  "poseidonCheck": "7XVNVBqDuZgzmXJUrFtszCnYhVnb8criRTHAJ5K2isTR",
+  "poseidon": {
+    "sig": "caFs8sqvHon81WS4VfcmRmjTLB4jgEQEhpxZHBckWKDwNCB9LeveCZm45WVrQM4vf72AW4wQfqEfD9VbtYqGQUt",
+    "ok": true,
+    "computeUnits": 69181,
+    "cuLogs": [
+      "Program consumption: 1386654 units remaining",
+      "Program consumption: 1367433 units remaining"
+    ],
+    "h12Matches": true,
+    "rootMatchesCircuit": true,
+    "nullifierMatchesCircuit": true
+  },
+  "validProof": {
+    "sig": "3XoMf8WUjzMNgDjxHFexWF2ys2Vht2UbafHgMH3DYW8qAdYAnE9GAQwX34Ae3qkRkcNGuXBXVDXEPMcSmkKzjdNF",
+    "ok": true,
+    "computeUnits": 178648,
+    "txBytes": 706,
+    "proofBytes": 324,
+    "publicWitnessBytes": 172,
+    "feeLamports": 5000,
+    "confirmMs": 430
+  },
+  "tamperedInputs": {
+    "root": {
+      "sig": "5V4g6HEd4UZQsdwEwXiEayhY7jWacE6eLg1nYQDMj4SPoqZgrP51wpHD7KhB2d5f5huQqY5K6d6Ak472GGQtm2KW",
+      "rejected": true
+    },
+    "nullifier": {
+      "sig": "25MJPu1m2LQTyDdDddayFhF43zo7v6w5DYvyGd5QfqH9Swa5L7SZgrybujBCXWHLuyds2rbBmocjrDBj2UmFszxQ",
+      "rejected": true
+    },
+    "recipient": {
+      "sig": "2NsATME8XoYuq5cf7wnFEU14XbhDksxWT43pYJ19iV3enZDyVQV9JewgUx4HQuf3PJgBbiz4xMkNikTbqHEzYdsQ",
+      "rejected": true
+    },
+    "relayer": {
+      "sig": "5C6EbbwS8nr2SCeVa5fyfvoCwtCyWm8BmSGzq7mSKVGrNnvnkpCwVNwwk7JtDp3UP4N2vizkZfycHhrtmDbwmpyw",
+      "rejected": true
+    },
+    "fee": {
+      "sig": "4EtmZJQYYUU8qfYPTJqKHeyv4e5fBENqJFgMH6jNLKkW9Pe2Piaw2opjGocDdsRQZiXjc3KLPQrAKWVAT9pY1KPv",
+      "rejected": true
+    }
+  },
+  "tamperedProof": {
+    "sig": "5Y4g741vzgwB7LLvBt6ZZAoy2bPeAuWsRsoNaDdBx8jKBz47oJihUQ3acv559YfVkXaDwhuBndEYzXRer54gYMRW",
+    "rejected": true
+  }
+}

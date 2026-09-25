@@ -1,0 +1,8 @@
+{
+  "name": "solana-poc",
+  "private": true,
+  "description": "Test de faisabilité : preuve de réclamation Noir → Groth16 (Sunspot) vérifiée sur Solana",
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4"
+  }
+}

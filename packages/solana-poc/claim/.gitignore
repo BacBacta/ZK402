@@ -1,0 +1,3 @@
+target/ClaimVerifier.sol
+target/*.gz
+Prover_*.toml

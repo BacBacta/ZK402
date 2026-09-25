@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - "!packages/solana-poc" # test autonome (npm), hors lockfile pnpm
 
 onlyBuiltDependencies:
   - esbuild
