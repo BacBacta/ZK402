@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-25T11:55:32.668Z",
+  "rpc": "https://devnet.helius-rpc.com/?api-key=…",
+  "program": "9KYiaHzahJoob44pnj8WuNKxBnavXUn13AJyDdjtZsKy",
+  "tamperedRecipient": {
+    "sig": "JkXtFNecRUfEPw1JxqitxrMnSov7spytSeRHrwMbEQz5qZVcpyY414VmEugDDSzbiDbx2Vdif2JkAZZWyvjRNzd",
+    "rejected": true
+  },
+  "validSpend": {
+    "sig": "4Q2nTiQkWQVT4kepYBdeVz8ZUGojqkbEvGX1bAox25PAnQwEipvUgoBFvhERAvtaAcP8c1BdSRGfEqJvHaCyjo74",
+    "ok": true,
+    "computeUnits": 324805,
+    "txBytes": 1122,
+    "usedLookupTable": false,
+    "feeLamports": 5000,
+    "nullifierAccountIndexed": true
+  },
+  "doubleSpendValidityProof": "refusée : failed to get validity proof for hashes : Invalid parameters: Address 18aGMfCoWcQYasqj5zRS4hRSrGVQLPVBRQuHQmbmg2o alread",
+  "doubleSpendReplay": {
+    "sig": "kg3sAAYx56oTxg7pD6Q2AqeFeeZzkAt9Ua6GbWyz3FvR4pBdbWWzwHnBWZ8ZvZinDbdB2vcR9kPUZ2MVxTz6pcn",
+    "rejected": true
+  },
+  "totalLamportsSpentByScript": 25004
+}

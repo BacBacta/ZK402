@@ -27,8 +27,10 @@ async function lightData(nullifier) {
   let outputStateTree;
   if (LOCAL) outputStateTree = L.defaultTestStateTreeAccounts().merkleTree;
   else {
-    const infos = await rpc.getStateTreeInfos();
-    outputStateTree = L.selectStateTreeInfo(infos).tree;
+    // Les adresses V2 exigent un arbre d'état V2 (sinon StateMerkleTreeAccountDiscriminatorMismatch).
+    const infos = (await rpc.getStateTreeInfos()).filter((i) => i.treeType === L.TreeType.StateV2);
+    // Arbre V2 (par lots) : la sortie s'écrit dans sa file (queue), pas dans l'arbre.
+    outputStateTree = L.selectStateTreeInfo(infos).queue;
   }
   const seed = L.deriveAddressSeedV2([Buffer.from("nullifier"), nullifier]);
   const address = L.deriveAddressV2(seed, addressTree, PROGRAM_ID);

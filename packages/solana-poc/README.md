@@ -85,9 +85,24 @@ Environnement local : `light test-validator --no-use-surfpool` (validateur, inde
 
 Coût total d'une dépense ≈ 15 000 lamports ≈ **0,0017 $** (SOL à ≈ 116 $, cours approximatif).
 
-Programme déployé sur devnet : `9KYiaHzahJoob44pnj8WuNKxBnavXUn13AJyDdjtZsKy` (loyer ≈ 0,87 SOL).
-Le test devnet exige un RPC servant l'API ZK Compression (Helius) : le RPC public de devnet ne
-la fournit pas.
+### Résultats sur Solana devnet (25 septembre 2026) — `results-spend-devnet.json`
+
+Programme `9KYiaHzahJoob44pnj8WuNKxBnavXUn13AJyDdjtZsKy` (loyer ≈ 0,87 SOL) ; RPC Helius devnet
+(API ZK Compression ; le RPC public de devnet ne la fournit pas). Arbres Light **V2** : la sortie
+doit viser la **file** (`queue`) de l'arbre d'état V2, sinon le programme Light rejette
+(`StateMerkleTreeAccountDiscriminatorMismatch`, 0x179a).
+
+| Mesure | Devnet |
+|---|---|
+| Dépense valide | ✅ **324 805 CU**, **1 122 octets**, sans table d'adresses ([transaction](https://explorer.solana.com/tx/4Q2nTiQkWQVT4kepYBdeVz8ZUGojqkbEvGX1bAox25PAnQwEipvUgoBFvhERAvtaAcP8c1BdSRGfEqJvHaCyjo74?cluster=devnet)) |
+| Nullificateur indexé par Helius | ✅ oui |
+| Destinataire modifié | ✅ refusé (« Preuve invalide ») |
+| Double dépense : preuve de non-existence | ✅ refusée par l'indexeur (« address already exists ») |
+| Double dépense : rejeu on-chain | ✅ refusé par le programme Light (0x3779) |
+| Coût d'une dépense | 5 000 lamports de frais + ≈ 10 000 lamports pour le nullificateur ≈ **15 000 lamports ≈ 0,0017 $** |
+
+L'écart avec le local (359 814 CU) vient de l'arbre d'état : V1 en local, V2 (par lots, moins
+coûteux à l'insertion) sur devnet.
 
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
