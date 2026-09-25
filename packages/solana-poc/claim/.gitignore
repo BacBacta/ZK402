@@ -3,3 +3,5 @@ target/*.gz
 Prover_*.toml
 Prover_pool.toml
 target/pool/
+Prover_*.toml
+target/relay/

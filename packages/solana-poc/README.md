@@ -151,6 +151,43 @@ Taille du programme : 289 Ko (profil `opt-level = "z"`, LTO) → ≈ 1,47 SOL de
 Piège rencontré : copier le compte `Pool` (2,4 Ko) sur la pile provoquait un accès mémoire
 invalide (pile de 4 Ko par appel) ; seuls les champs utiles sont lus.
 
+## Relayeur — `relayer.js`, `relay-test.js`
+
+Service HTTP (`GET /info`, `POST /relay`). L'utilisateur envoie seulement
+`{ proof, publicWitness, recipientOwner }` : **aucune signature, aucun SOL**. Le relayeur
+vérifie que la preuve le désigne et que les frais prouvés atteignent son minimum, dérive le
+compte de jetons du destinataire (créé au besoin) et vérifie qu'il est celui de la preuve,
+obtient la preuve de non-existence du nullificateur, **simule** la transaction, puis seulement
+la signe et paie. La preuve lie le relayeur et ses frais : un autre relayeur ne peut pas
+détourner les frais, ni personne le destinataire.
+
+### Résultats sur Solana devnet (25 septembre 2026) — `results-relay-devnet.json`
+
+Scénario : pool neuf, 3 dépôts (dont 1 par le déposant testé), destinataire = adresse neuve
+jamais financée, relayeur = clé neuve.
+
+| Requête | Réponse | Payé par le relayeur |
+|---|---|---|
+| Frais prouvés sous le minimum | 400 « frais 19999 < minimum 20000 » | **0** |
+| Preuve désignant un autre relayeur | 400 « la preuve ne désigne pas ce relayeur » | **0** |
+| Preuve altérée | 422 « simulation refusée : Preuve invalide » | **0** |
+| Retrait valide | ✅ 200 ([transaction](https://explorer.solana.com/tx/22bVdsJuXxqkK5evYGtagVJAwhP3YLQCxguortay5yjwiqcA9X8N4cjWoJukYxL7h2mudYicougEutATv1v3Km2G?cluster=devnet)) : 382 527 CU, 1 057 o | 1 503 444 lamports |
+| Double dépense (même requête) | 409 « nullificateur déjà utilisé » | **0** |
+
+Vérifications sur la transaction de retrait :
+- payeur = le relayeur ; **ni le portefeuille du déposant ni son compte de jetons n'y
+  apparaissent** ;
+- destinataire : 0,98 jeton reçu, **0 SOL** (il n'a jamais eu besoin de SOL) ;
+- relayeur : 0,02 jeton de frais.
+
+Coût du relayeur par retrait : 5 000 (frais) + ≈ 10 000 (nullificateur) = ≈ 15 000 lamports si
+le compte du destinataire existe ; **+ 1 488 440 lamports** (loyer devnet d'un compte de jetons,
+≈ 0,17 $) s'il faut le créer. Des frais de 0,02 $ ne couvrent donc pas la création du compte :
+le relayeur devra demander un supplément dans ce cas, ou exiger un compte existant.
+
+Limites (test) : pas de limitation de débit, pas de file d'attente ; l'adresse IP de
+l'utilisateur est visible du relayeur (passer par Tor ou un relais réseau).
+
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
 Premier essai : une preuve valide restait **acceptée avec `recipient`, `relayer` ou `fee`

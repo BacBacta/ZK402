@@ -1,0 +1,59 @@
+{
+  "date": "2026-09-25T12:59:40.160Z",
+  "rpc": "https://devnet.helius-rpc.com/?api-key=…",
+  "program": "DMBrPRJ7H5hPaJ14T5sVfKQavD71PrkmXFiRDh32S2V8",
+  "relayerInfo": {
+    "relayer": "35koDPKaj8Ca9bhk5ssqi5xxJNZ7VmNwUU6jFT7hWqez",
+    "relayerToken": "1JWr9Gzt4odH4iYJf5vcWFq5zvfmTY5qzXx9mXGn4pt",
+    "minFee": "20000",
+    "program": "DMBrPRJ7H5hPaJ14T5sVfKQavD71PrkmXFiRDh32S2V8",
+    "pool": "7eS6ZzUAbAxMQtKcEZMct8rFh5at1XnoB7aniWaQEJN8",
+    "mint": "7FwgTQm4716zHFWaWDGPYbFPFWnASWdPa4DmKMWqq2qq"
+  },
+  "feeTooLow": {
+    "http": 400,
+    "error": "frais 19999 < minimum 20000",
+    "sig": null,
+    "relayerLamportsSpent": 0,
+    "simulatedComputeUnits": null,
+    "txBytes": null
+  },
+  "wrongRelayer": {
+    "http": 400,
+    "error": "la preuve ne désigne pas ce relayeur",
+    "sig": null,
+    "relayerLamportsSpent": 0,
+    "simulatedComputeUnits": null,
+    "txBytes": null
+  },
+  "tamperedProof": {
+    "http": 422,
+    "error": "simulation refusée : Program log: AnchorError occurred. Error Code: InvalidProof. Error Number: 6000. Error Message: Preuve invalide.",
+    "sig": null,
+    "relayerLamportsSpent": 0,
+    "simulatedComputeUnits": null,
+    "txBytes": null
+  },
+  "valid": {
+    "http": 200,
+    "error": null,
+    "sig": "22bVdsJuXxqkK5evYGtagVJAwhP3YLQCxguortay5yjwiqcA9X8N4cjWoJukYxL7h2mudYicougEutATv1v3Km2G",
+    "relayerLamportsSpent": 1503444,
+    "simulatedComputeUnits": 382527,
+    "txBytes": 1057,
+    "computeUnits": 382527,
+    "feePayer": "35koDPKaj8Ca9bhk5ssqi5xxJNZ7VmNwUU6jFT7hWqez",
+    "depositorAppearsInWithdrawal": false,
+    "recipientBalance": "980000",
+    "relayerTokenBalance": "20000",
+    "recipientOwnerSol": 0
+  },
+  "doubleSpend": {
+    "http": 409,
+    "error": "nullificateur déjà utilisé ou indexeur indisponible",
+    "sig": null,
+    "relayerLamportsSpent": 0,
+    "simulatedComputeUnits": null,
+    "txBytes": null
+  }
+}
