@@ -1,0 +1,117 @@
+{
+  "date": "2026-09-25T04:15:22.668Z",
+  "bench": "0xe1ae6b3bda7cd26d5daf08966a328f1f69b1242f",
+  "K": 40,
+  "results": [
+    {
+      "width": 16,
+      "op": "mul",
+      "chained": false,
+      "k": 5,
+      "fheOps": 5,
+      "gas": "728757",
+      "latencySeconds": 1.94,
+      "opsPerSecond": 2.58,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "mul",
+      "chained": false,
+      "k": 20,
+      "fheOps": 20,
+      "gas": "2515420",
+      "latencySeconds": 2.12,
+      "opsPerSecond": 9.43,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "mul",
+      "chained": false,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "4802166",
+      "latencySeconds": 5.7,
+      "opsPerSecond": 7.01,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "add",
+      "chained": false,
+      "k": 10,
+      "fheOps": 10,
+      "gas": "1157139",
+      "latencySeconds": 1.49,
+      "opsPerSecond": 6.71,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "add",
+      "chained": false,
+      "k": 80,
+      "fheOps": 80,
+      "gas": "9970243",
+      "latencySeconds": 5.47,
+      "opsPerSecond": 14.61,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "mul",
+      "chained": false,
+      "k": 5,
+      "fheOps": 5,
+      "gas": "791310",
+      "latencySeconds": 3.96,
+      "opsPerSecond": 1.26,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "mul",
+      "chained": false,
+      "k": 20,
+      "fheOps": 20,
+      "gas": "2518335",
+      "latencySeconds": 19.51,
+      "opsPerSecond": 1.03,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "mul",
+      "chained": false,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "4807981",
+      "latencySeconds": 31.95,
+      "opsPerSecond": 1.25,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "add",
+      "chained": false,
+      "k": 10,
+      "fheOps": 10,
+      "gas": "1158604",
+      "latencySeconds": 4.03,
+      "opsPerSecond": 2.48,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "add",
+      "chained": false,
+      "k": 80,
+      "fheOps": 80,
+      "gas": "9981858",
+      "latencySeconds": 7.12,
+      "opsPerSecond": 11.23,
+      "complete": true
+    }
+  ]
+}

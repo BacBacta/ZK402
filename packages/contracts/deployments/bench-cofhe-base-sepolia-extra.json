@@ -1,0 +1,117 @@
+{
+  "date": "2026-09-25T04:12:48.023Z",
+  "bench": "0xa45aeb41f1c7556a557ba0a953764ed41d584d57",
+  "K": 40,
+  "results": [
+    {
+      "width": 16,
+      "op": "mul",
+      "chained": false,
+      "k": 10,
+      "fheOps": 10,
+      "gas": "1189816",
+      "latencySeconds": 3.09,
+      "opsPerSecond": 3.24,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "mul",
+      "chained": false,
+      "k": 20,
+      "fheOps": 20,
+      "gas": "1465853",
+      "latencySeconds": 0.25,
+      "opsPerSecond": 81.61,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "mul",
+      "chained": true,
+      "k": 20,
+      "fheOps": 20,
+      "gas": "1134525",
+      "latencySeconds": 4.02,
+      "opsPerSecond": 4.98,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "add",
+      "chained": true,
+      "k": 80,
+      "fheOps": 80,
+      "gas": "4018176",
+      "latencySeconds": 7.67,
+      "opsPerSecond": 10.43,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "gte+sub+select",
+      "chained": true,
+      "k": 60,
+      "fheOps": 180,
+      "gas": "6446460",
+      "latencySeconds": 12.59,
+      "opsPerSecond": 14.3,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "mul",
+      "chained": false,
+      "k": 10,
+      "fheOps": 10,
+      "gas": "1157137",
+      "latencySeconds": 7.98,
+      "opsPerSecond": 1.25,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "mul",
+      "chained": false,
+      "k": 20,
+      "fheOps": 20,
+      "gas": "1468630",
+      "latencySeconds": 0.27,
+      "opsPerSecond": 74.57,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "mul",
+      "chained": true,
+      "k": 20,
+      "fheOps": 20,
+      "gas": "1137282",
+      "latencySeconds": 16.34,
+      "opsPerSecond": 1.22,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "add",
+      "chained": true,
+      "k": 80,
+      "fheOps": 80,
+      "gas": "4029159",
+      "latencySeconds": 12.6,
+      "opsPerSecond": 6.35,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "gte+sub+select",
+      "chained": true,
+      "k": 60,
+      "fheOps": 180,
+      "gas": "6460941",
+      "latencySeconds": 17.56,
+      "opsPerSecond": 10.25,
+      "complete": true
+    }
+  ]
+}

@@ -1,0 +1,172 @@
+{
+  "date": "2026-09-25T04:10:24.436Z",
+  "bench": "0x201b8f666af4d56102a668fb9eb989fbe9a1d64d",
+  "K": 40,
+  "results": [
+    {
+      "width": 16,
+      "op": "add",
+      "chained": true,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "2113393",
+      "latencySeconds": 4.26,
+      "opsPerSecond": 9.39,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "min",
+      "chained": true,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "2157233",
+      "latencySeconds": 6.43,
+      "opsPerSecond": 6.22,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "gte+sub+select",
+      "chained": true,
+      "k": 40,
+      "fheOps": 120,
+      "gas": "4342267",
+      "latencySeconds": 7.64,
+      "opsPerSecond": 15.71,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "mul",
+      "chained": true,
+      "k": 10,
+      "fheOps": 10,
+      "gas": "631343",
+      "latencySeconds": 2.72,
+      "opsPerSecond": 3.68,
+      "complete": true
+    },
+    {
+      "width": 16,
+      "op": "add",
+      "chained": false,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "3422577",
+      "latencySeconds": 3.37,
+      "opsPerSecond": 11.88,
+      "complete": true
+    },
+    {
+      "width": 32,
+      "op": "add",
+      "chained": true,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "2092009",
+      "latencySeconds": 6.42,
+      "opsPerSecond": 6.23,
+      "complete": true
+    },
+    {
+      "width": 32,
+      "op": "min",
+      "chained": true,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "2160229",
+      "latencySeconds": 6.44,
+      "opsPerSecond": 6.22,
+      "complete": true
+    },
+    {
+      "width": 32,
+      "op": "gte+sub+select",
+      "chained": true,
+      "k": 40,
+      "fheOps": 120,
+      "gas": "4347343",
+      "latencySeconds": 12.58,
+      "opsPerSecond": 9.54,
+      "complete": true
+    },
+    {
+      "width": 32,
+      "op": "mul",
+      "chained": true,
+      "k": 10,
+      "fheOps": 10,
+      "gas": "632123",
+      "latencySeconds": 6.41,
+      "opsPerSecond": 1.56,
+      "complete": true
+    },
+    {
+      "width": 32,
+      "op": "add",
+      "chained": false,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "3425613",
+      "latencySeconds": 3.14,
+      "opsPerSecond": 12.73,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "add",
+      "chained": true,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "2094512",
+      "latencySeconds": 7.64,
+      "opsPerSecond": 5.24,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "min",
+      "chained": true,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "2162732",
+      "latencySeconds": 7.67,
+      "opsPerSecond": 5.21,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "gte+sub+select",
+      "chained": true,
+      "k": 40,
+      "fheOps": 120,
+      "gas": "4351926",
+      "latencySeconds": 12.63,
+      "opsPerSecond": 9.5,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "mul",
+      "chained": true,
+      "k": 10,
+      "fheOps": 10,
+      "gas": "632706",
+      "latencySeconds": 10.1,
+      "opsPerSecond": 0.99,
+      "complete": true
+    },
+    {
+      "width": 64,
+      "op": "add",
+      "chained": false,
+      "k": 40,
+      "fheOps": 40,
+      "gas": "3428116",
+      "latencySeconds": 3.03,
+      "opsPerSecond": 13.18,
+      "complete": true
+    }
+  ]
+}
