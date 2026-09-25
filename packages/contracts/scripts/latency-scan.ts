@@ -63,9 +63,13 @@ async function main() {
   const op = walletFor(opKey);
   const log: Record<string, unknown> = { date: new Date().toISOString(), network: "base-sepolia", n: N, step: String(STEP), algorithm: "scan Blelloch + preuve unique" };
 
-  // 1. Déploiement (mode démo)
-  const dh = await op.deployContract({ abi, bytecode: art.bytecode, args: [BASE_SEPOLIA_ORACLES, 1_000_000_000n, DURATION, viem.zeroAddress, 0n], gas: 6_000_000n });
-  const pool = (await pc.waitForTransactionReceipt({ hash: dh })).contractAddress as string;
+  // 1. Déploiement (mode démo), ou reprise sur un pool existant (RESUME_POOL) dont le lot est chargé.
+  const resume = process.env.RESUME_POOL;
+  const pool = resume
+    ? resume
+    : ((await pc.waitForTransactionReceipt({
+        hash: await op.deployContract({ abi, bytecode: art.bytecode, args: [BASE_SEPOLIA_ORACLES, 1_000_000_000n, DURATION, viem.zeroAddress, 0n], gas: 6_000_000n }),
+      })).contractAddress as string);
   console.log("pool", pool);
   log.pool = pool;
   await sleep(4000);
@@ -87,13 +91,20 @@ async function main() {
   const qtys: bigint[] = [];
   for (let i = 0; i < N; i++) {
     const w = traders[i];
+    sides.push(i % 2 === 0);
+    qtys.push(BigInt(5 + i));
+    if (resume) {
+      const c = createCofheClient(createCofheConfig({ environment: "node", supportedChains: [getChainById(84532)!] }));
+      await c.connect(pc, w);
+      await c.acp.createSelf({ issuer: w.account.address });
+      clients.push(c);
+      continue;
+    }
     await send(w, pool, "claimFaucet", [], 1_000_000n);
     const c = createCofheClient(createCofheConfig({ environment: "node", supportedChains: [getChainById(84532)!] }));
     await c.connect(pc, w);
     await c.acp.createSelf({ issuer: w.account.address });
     clients.push(c);
-    sides.push(i % 2 === 0);
-    qtys.push(BigInt(5 + i));
     const t = now();
     enc.push(await retry("chiffrement", () => c.encryptInputs([Encryptable.bool(sides[i]), Encryptable.uint64(qtys[i])]).setConsumingContract(pool).execute()));
     encTimes.push(now() - t);
@@ -103,23 +114,36 @@ async function main() {
   // 3. Soumission dans un lot neuf, clôture, règlement
   let batch: bigint;
   let deadline: bigint;
-  for (;;) {
-    batch = (await read(pool, "currentBatch")) as bigint;
-    deadline = (await read(pool, "batchDeadline", [batch])) as bigint;
-    const ts = (await pc.getBlock()).timestamp as bigint;
-    if (deadline - ts >= BigInt(Math.max(60, 4 * N))) break;
-    await sleep(5000);
-  }
   const submitGas: bigint[] = [];
-  for (let i = 0; i < N; i++) {
-    const [s, q, sig] = enc[i];
-    const r = await send(traders[i], pool, "submitOrderBatched", [s, q, sig], 1_500_000n);
-    submitGas.push(r.gasUsed);
+  if (resume) {
+    batch = BigInt(process.env.RESUME_BATCH || "0");
+    deadline = (await read(pool, "batchDeadline", [batch])) as bigint;
+  } else {
+    for (;;) {
+      batch = (await read(pool, "currentBatch")) as bigint;
+      deadline = (await read(pool, "batchDeadline", [batch])) as bigint;
+      const ts = (await pc.getBlock()).timestamp as bigint;
+      if (deadline - ts >= BigInt(Math.max(60, 4 * N))) break;
+      await sleep(5000);
+    }
+    for (let i = 0; i < N; i++) {
+      const [s, q, sig] = enc[i];
+      const r = await send(traders[i], pool, "submitOrderBatched", [s, q, sig], 1_500_000n);
+      submitGas.push(r.gasUsed);
+    }
+    console.log(`${N} ordres soumis dans le lot ${batch}`);
   }
-  console.log(`${N} ordres soumis dans le lot ${batch}`);
   for (;;) {
     if (((await pc.getBlock()).timestamp as bigint) >= deadline) break;
     await sleep(5000);
+  }
+  // Lots antérieurs vides éventuels : passés sans oracle (n'importe qui peut le faire).
+  for (;;) {
+    const k = (await read(pool, "nextToSettle")) as bigint;
+    if (k >= batch) break;
+    if (((await read(pool, "orderCount", [k])) as bigint) !== 0n) throw new Error(`lot ${k} non vide inattendu`);
+    await send(op, pool, "startSettlement", [0n, []], 500_000n);
+    await sleep(3000);
   }
   const t0 = now();
   const gas: bigint[] = [];
@@ -158,8 +182,8 @@ async function main() {
   const q = (p: number) => (got.length ? got[Math.min(got.length - 1, Math.floor(p * got.length))] : null);
   const sum = (a: bigint[]) => a.reduce((x, y) => x + y, 0n);
   Object.assign(log, {
-    encryptSecondsPerOrderAvg: encTimes.reduce((a, b) => a + b, 0) / N,
-    submitGasAvg: String(sum(submitGas) / BigInt(N)),
+    encryptSecondsPerOrderAvg: encTimes.length ? encTimes.reduce((a, b) => a + b, 0) / encTimes.length : "voir exécution précédente",
+    submitGasAvg: submitGas.length ? String(sum(submitGas) / BigInt(submitGas.length)) : "voir exécution précédente",
     settleGasTotal: String(sum(gas)), settleTxs: gas.length, onchainSettleSeconds: tSettled - t0,
     decryptReadySeconds: { first: got[0] ?? null, median: q(0.5), p90: q(0.9), last: got[got.length - 1] ?? null, ready: got.length, of: N },
     fills, expected, correct: fills.every((f, i) => f === expected[i]),
