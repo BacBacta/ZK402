@@ -1,0 +1,26 @@
+[package]
+name = "spend"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "spend"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+idl-build = ["anchor-lang/idl-build", "light-sdk/idl-build"]
+
+[dependencies]
+anchor-lang = "1.0.2"
+light-sdk = { version = "0.24.0", features = ["anchor", "cpi-context", "keccak"] }
+gnark-verifier-solana = "2"
+
+[build-dependencies]
+gnark-verifier-solana = "2"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))', 'cfg(feature, values("custom-heap", "custom-panic", "anchor-debug"))'] }

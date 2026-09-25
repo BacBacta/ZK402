@@ -4,3 +4,4 @@ node_modules/
 !claim/target/claim.proof
 !claim/target/claim.pw
 *-keypair.json
+spend/src/generated_vk.rs
