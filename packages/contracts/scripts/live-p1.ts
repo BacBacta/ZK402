@@ -9,7 +9,10 @@ import { BASE_SEPOLIA_ORACLES } from "./oracles-base-sepolia";
 import { Tree, newNote, proveClaim } from "../test/helpers/zk";
 
 const STIPEND = hre.ethers.parseEther("0.0002");
-const BASE_CLASS = { isBase: true, depositAmount: hre.ethers.parseEther("0.001"), poolAmount: 1n }; // 0,001 ETH = 1 mETH
+// Unité BASE du pool = 0,0001 ETH ; palier 0,001 ETH = 10 unités ; allocation 0,0002 ETH = 2 unités.
+const BASE_CLASS = { isBase: true, depositAmount: hre.ethers.parseEther("0.001"), poolAmount: 10n };
+const STIPEND_UNITS = 2n;
+const MAX_OUTFLOW_BPS = 2_000n;
 const GAS = { gasLimit: 8_000_000n };
 // Nonces gérés localement : le RPC public répond parfois avec un état en retard.
 let NONCE = 0;
@@ -33,7 +36,7 @@ async function main() {
   );
   await pool.waitForDeployment();
   const Entry = await e.getContractFactory("ShieldedEntry", { libraries: { PoseidonT3: await poseidon.getAddress() } });
-  const entry = await Entry.deploy(await pool.getAddress(), await verifier.getAddress(), e.ZeroAddress, STIPEND, [BASE_CLASS], tx());
+  const entry = await Entry.deploy(await pool.getAddress(), await verifier.getAddress(), e.ZeroAddress, STIPEND, MAX_OUTFLOW_BPS, STIPEND_UNITS, [BASE_CLASS], tx());
   await entry.waitForDeployment();
   if ((await entry.getAddress()) !== entryAddr) throw new Error("adresse d'entrée inattendue");
   const addrs = {

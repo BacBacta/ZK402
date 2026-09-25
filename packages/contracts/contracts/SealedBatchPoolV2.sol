@@ -4,6 +4,15 @@ pragma solidity ^0.8.25;
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import {IAggregatorV3, IPythMinimal} from "./oracles/IOracles.sol";
 
+/// @notice Vue de l'entrée blindée utilisée par le pool pour les sorties vers une note (P4).
+interface IShieldedEntryForPool {
+    function stipendBaseUnits() external view returns (uint64);
+
+    function classInfo(uint8 cls) external view returns (bool isBase, uint64 poolAmount);
+
+    function insertFromPool(uint8 cls, uint256 commitment) external;
+}
+
 /// @title SealedBatchPoolV2 — dark pool par lots, ordres chiffrés (CoFHE), sans opérateur
 /// @notice Incréments 1 et 2 du programme docs/prompt-s1-points-ouverts.md (P7 + P2.a).
 ///         Spécification : docs/s1-specification.md.
@@ -76,6 +85,18 @@ contract SealedBatchPoolV2 {
     /// @notice Frais accumulés par lot (payés au finisseur du règlement).
     mapping(uint256 => uint256) public batchFees;
 
+    /// @notice Demandes de sortie vers une note (P4) : débit chiffré en attente de la publication
+    ///         du résultat déchiffré de `ok` (solde suffisant ?).
+    struct NoteOut {
+        address owner;
+        uint8 cls;
+        uint256 commitment;
+        ebool ok;
+    }
+
+    mapping(uint256 => NoteOut) public noteOuts;
+    uint256 public nextNoteOut;
+
     /// @notice Prochain lot à régler (les lots se règlent strictement dans l'ordre).
     uint256 public nextToSettle;
 
@@ -105,6 +126,8 @@ contract SealedBatchPoolV2 {
     event BatchPostponed(uint256 indexed batchId, uint8 reason);
     event Credited(address indexed account);
     event KeeperPaid(uint256 indexed batchId, address indexed keeper, uint256 amount);
+    event NoteOutRequested(uint256 indexed id, address indexed owner, uint8 cls, uint256 commitment, bytes32 okHandle);
+    event NoteOutFinalized(uint256 indexed id, bool ok);
 
     // Validité par source (bits) et codes de report (BatchPostponed.reason)
     uint8 public constant R_NOT_ENOUGH_SOURCES = 1; // moins de 2 sources valides
@@ -123,6 +146,9 @@ contract SealedBatchPoolV2 {
     error OnlyEntry();
     error FaucetDisabled();
     error BadFeeValue();
+    error NoEntry();
+    error UnknownNoteOut();
+    error BadDecryption();
 
     struct OracleConfig {
         address chainlinkFeed;
@@ -228,6 +254,55 @@ contract SealedBatchPoolV2 {
 
     function lastFillOf(address a) external view returns (euint64) {
         return _lastFill[a];
+    }
+
+    // ------------------------------------------------------------------ sorties (P4)
+
+    /// @notice Convertit un palier `cls` du solde CHIFFRÉ de l'appelant en une nouvelle note
+    ///         (engagement `commitment`) de l'entrée blindée. L'allocation de gas de la note est
+    ///         prélevée sur le solde CHIFFRÉ en BASE (s unités) : aucun ETH extérieur n'est requis,
+    ///         donc aucun lien avec une autre adresse. Circuit constant :
+    ///           ok = (BASE ≥ s + d si palier BASE) ou (QUOTE ≥ d et BASE ≥ s si palier QUOTE)
+    ///           débits = select(ok, …, 0).
+    ///         `ok` est rendu déchiffrable publiquement ; `finalizeNoteOut` publie son résultat signé.
+    /// @dev Interdit pendant un règlement : un débit entre le contrôle de couverture et
+    ///      l'exécution pourrait faire reboucler un solde.
+    function requestNoteOut(uint8 cls, uint256 commitment) external returns (uint256 id) {
+        if (entry == address(0)) revert NoEntry();
+        if (phase != Phase.Idle) revert SettlementInProgress();
+        if (!hasAccount[msg.sender]) revert NoAccount();
+        IShieldedEntryForPool e = IShieldedEntryForPool(entry);
+        (bool isBase, uint64 amount) = e.classInfo(cls);
+        uint64 s = e.stipendBaseUnits();
+
+        euint64 bBal = _base[msg.sender];
+        euint64 qBal = _quote[msg.sender];
+        euint64 baseNeed = FHE.asEuint64(isBase ? amount + s : s);
+        euint64 quoteNeed = FHE.asEuint64(isBase ? 0 : amount);
+        ebool ok = FHE.and(FHE.gte(bBal, baseNeed), FHE.gte(qBal, quoteNeed));
+        _setBalances(
+            msg.sender,
+            FHE.sub(bBal, FHE.select(ok, baseNeed, _zero)),
+            FHE.sub(qBal, FHE.select(ok, quoteNeed, _zero))
+        );
+        FHE.allowThis(ok);
+        FHE.allowPublic(ok);
+
+        id = nextNoteOut++;
+        noteOuts[id] = NoteOut(msg.sender, cls, commitment, ok);
+        emit NoteOutRequested(id, msg.sender, cls, commitment, ebool.unwrap(ok));
+    }
+
+    /// @notice Finalise une sortie vers une note avec le résultat déchiffré SIGNÉ de `ok`.
+    ///         N'importe qui peut l'appeler. ok = vrai : la note est insérée dans l'arbre de
+    ///         l'entrée ; ok = faux : rien n'a été débité.
+    function finalizeNoteOut(uint256 id, bool okPlain, bytes calldata signature) external {
+        NoteOut memory n = noteOuts[id];
+        if (n.owner == address(0)) revert UnknownNoteOut();
+        if (!FHE.verifyDecryptResultSafe(n.ok, okPlain, signature)) revert BadDecryption();
+        delete noteOuts[id];
+        emit NoteOutFinalized(id, okPlain);
+        if (okPlain) IShieldedEntryForPool(entry).insertFromPool(n.cls, n.commitment);
     }
 
     // ------------------------------------------------------------------ ordres

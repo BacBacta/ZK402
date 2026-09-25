@@ -8,6 +8,8 @@ const TASK_COFHE_MOCKS_DEPLOY = "task:cofhe-mocks:deploy";
 const PYTH_ID = "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace";
 const STIPEND = hre.ethers.parseEther("0.001");
 const SUBMIT_FEE = hre.ethers.parseEther("0.00001");
+const STIPEND_UNITS = 1n; // 0,001 ETH = 1 unité BASE (mETH)
+const MAX_OUTFLOW_BPS = 2_000n; // 20 % des réserves par fenêtre (au moins un palier)
 const BASE_CLASS = { isBase: true, depositAmount: hre.ethers.parseEther("1"), poolAmount: 1_000n }; // 1 ETH = 1000 mETH
 const QUOTE_CLASS = { isBase: false, depositAmount: 1_000n * 10n ** 6n, poolAmount: 100_000n }; // 1000 USDC = 100 000 cents
 
@@ -35,7 +37,7 @@ async function deployFixture() {
     cfg, 1_000_000_000n, 3600n, entryAddress, SUBMIT_FEE,
   );
   const Entry = await hre.ethers.getContractFactory("ShieldedEntry", { libraries: { PoseidonT3: await poseidon.getAddress() } });
-  const entry = await Entry.deploy(await pool.getAddress(), await verifier.getAddress(), await usdc.getAddress(), STIPEND, [
+  const entry = await Entry.deploy(await pool.getAddress(), await verifier.getAddress(), await usdc.getAddress(), STIPEND, MAX_OUTFLOW_BPS, STIPEND_UNITS, [
     BASE_CLASS,
     QUOTE_CLASS,
   ]);
@@ -193,5 +195,157 @@ describe("ShieldedEntry — P1 : dépôt public, réclamation anonyme par preuve
     const { pool, poolAddress, signers } = await loadFixture(deployFixture);
     await expect(pool.connect(signers[0]).claimFaucet()).to.be.revertedWithCustomError(pool, "FaucetDisabled");
     await expect(pool.connect(signers[0]).credit(signers[0].address, 1n, 1n)).to.be.revertedWithCustomError(pool, "OnlyEntry");
+  });
+});
+
+
+// ----------------------------------------------------------------------------------------------
+// Incrément 4 (P4) : sorties vers une note, sortie anonyme en actif réel, disjoncteur, créances.
+// ----------------------------------------------------------------------------------------------
+describe("P4 — sorties sécurisées : note depuis un solde chiffré, sortie anonyme, disjoncteur", function () {
+  this.timeout(900_000);
+
+  /** Pseudonyme neuf crédité de 2 paliers BASE (2 000 unités) par deux réclamations anonymes. */
+  async function claimedPseudonym(o: any, tree: Tree, idx: number) {
+    const p = await freshPseudonym(o.signers, idx);
+    for (let k = 0; k < 2; k++) {
+      const d = await depositBase(o.entry, o.signers[idx * 2 + k], tree);
+      const { proof } = proveClaim({ note: d.note, tree, index: d.index, recipient: p.address, relayer: hre.ethers.ZeroAddress, fee: 0n });
+      await o.entry.claim(0, proof, tree.root(), hre.ethers.toBeHex(d.note.nullifier, 32), p.address, hre.ethers.ZeroAddress, 0n);
+    }
+    return p;
+  }
+
+  const LOW = { maxFeePerGas: 20_000_000n, maxPriorityFeePerGas: 1_000_000n };
+
+  async function noteOut(o: any, p: any, commitment: bigint) {
+    const tx = await o.pool.connect(p).requestNoteOut(0, commitment, LOW);
+    const r = await tx.wait();
+    const ev = r!.logs.map((l: any) => { try { return o.pool.interface.parseLog(l); } catch { return null; } }).find((x: any) => x?.name === "NoteOutRequested");
+    const client = await hre.cofhe.createClientWithBatteries(o.signers[0]);
+    const dec = await client.decryptForTx(ev.args.okHandle).withoutACP().execute();
+    return { id: ev.args.id as bigint, okPlain: dec.decryptedValue === 1n, signature: dec.signature };
+  }
+
+  it("cycle complet : dépôt → pseudonyme → note depuis le solde chiffré → sortie ANONYME en ETH vers une adresse neuve", async function () {
+    const o = await loadFixture(deployFixture);
+    const tree = new Tree();
+    const p = await claimedPseudonym(o, tree, 0);
+    await depositBase(o.entry, o.signers[5], tree); // autre note : ensemble d'anonymat
+    const out = newNote();
+    const n = await noteOut(o, p, out.commitment);
+    expect(n.okPlain).to.equal(true);
+    await expect(o.pool.finalizeNoteOut(n.id, true, n.signature)).to.emit(o.entry, "NoteFromPool");
+    tree.insert(out.commitment);
+    expect(await o.entry.currentRoot(0)).to.equal(tree.root());
+    // Palier (1000) + allocation (1 unité) débités du solde chiffré, sans aucun ETH extérieur.
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(p.address), 2_000n - 1_000n - STIPEND_UNITS);
+
+
+    // Sortie anonyme : destinataire neuf, relayeur quelconque, frais prélevés sur la note.
+    const dest = hre.ethers.Wallet.createRandom().address;
+    const relayer = o.signers[10];
+    const fee = hre.ethers.parseEther("0.01");
+    const { proof } = proveClaim({ note: out, tree, index: tree.leaves.length - 1, recipient: dest, relayer: relayer.address, fee });
+    const reservesBefore = await o.entry.reserves(0);
+    await expect(o.entry.connect(relayer).exit(0, proof, tree.root(), hre.ethers.toBeHex(out.nullifier, 32), dest, relayer.address, fee))
+      .to.emit(o.entry, "ExitPaid");
+    expect(await hre.ethers.provider.getBalance(dest)).to.equal(BASE_CLASS.depositAmount - fee + STIPEND);
+    expect(await o.entry.reserves(0)).to.equal(reservesBefore - BASE_CLASS.depositAmount);
+    // Solvabilité : ETH détenu = réserves + allocations des notes non dépensées.
+    const eth = await hre.ethers.provider.getBalance(await o.entry.getAddress());
+    expect(eth).to.equal((await o.entry.reserves(0)) + STIPEND * 1n); // 1 note non dépensée (dépôt de signers[5])
+    expect(await o.entry.reserves(0)).to.equal(2n * BASE_CLASS.depositAmount - STIPEND);
+  });
+
+  it("solde insuffisant : ok = faux, rien n'est débité, aucune note", async function () {
+    const o = await loadFixture(deployFixture);
+    const tree = new Tree();
+    const p = await claimedPseudonym(o, tree, 0);
+    const first = await noteOut(o, p, newNote().commitment);
+    await o.pool.finalizeNoteOut(first.id, true, first.signature); // reste 999 < 1 001
+    const second = await noteOut(o, p, newNote().commitment);
+    expect(second.okPlain).to.equal(false);
+    const leaves = await o.entry.nextIndex(0);
+    await expect(o.pool.finalizeNoteOut(second.id, false, second.signature)).to.not.emit(o.entry, "NoteFromPool");
+    expect(await o.entry.nextIndex(0)).to.equal(leaves);
+    await hre.cofhe.mocks.expectPlaintext(await o.pool.baseBalanceOf(p.address), 999n);
+  });
+
+  it("un résultat de déchiffrement falsifié est refusé (signature liée au chiffré et à la valeur)", async function () {
+    const o = await loadFixture(deployFixture);
+    const tree = new Tree();
+    const p = await claimedPseudonym(o, tree, 0);
+    // Signature valide mais pour un AUTRE chiffré (autre demande) : refusée.
+    const a = await noteOut(o, p, newNote().commitment);
+    const b = await noteOut(o, p, newNote().commitment);
+    await expect(o.pool.finalizeNoteOut(a.id, b.okPlain, b.signature)).to.be.revertedWithCustomError(o.pool, "BadDecryption");
+    const n = await noteOut(o, p, newNote().commitment);
+    await expect(o.pool.finalizeNoteOut(n.id, !n.okPlain, n.signature)).to.be.revertedWithCustomError(o.pool, "BadDecryption");
+  });
+
+  it("aucune sortie pendant un règlement (protection de la couverture) ; insertion réservée au pool", async function () {
+    const o = await loadFixture(deployFixture);
+    const tree = new Tree();
+    const p = await claimedPseudonym(o, tree, 0);
+    const client = await hre.cofhe.createClientWithBatteries(p);
+    const [s, ps] = (await client.encryptInputs([Encryptable.bool(false)]).setConsumingContract(o.poolAddress).execute()) as any;
+    const [a, pa] = (await client.encryptInputs([Encryptable.uint64(10n)]).setConsumingContract(o.poolAddress).execute()) as any;
+    await (o.pool.connect(p) as any).submitOrder(s, ps, a, pa, { value: SUBMIT_FEE, ...LOW });
+    const deadline = await o.pool.batchDeadline(0n);
+    await time.increaseTo(deadline - 20n);
+    const now = BigInt(await time.latest());
+    await o.cl.push(2688n * 10n ** 8n, now);
+    await o.a3.push(2689n * 10n ** 18n, now);
+    await time.increaseTo(deadline);
+    await o.pool.startSettlement(await o.cl.latest(), []);
+    await expect(o.pool.connect(p).requestNoteOut(0, 123n, LOW)).to.be.revertedWithCustomError(o.pool, "SettlementInProgress");
+    await expect(o.entry.insertFromPool(0, 123n)).to.be.revertedWithCustomError(o.entry, "OnlyPool");
+  });
+
+  it("disjoncteur : au-delà du plafond de la fenêtre, la sortie est mise en file et payée à la fenêtre suivante", async function () {
+    const o = await loadFixture(deployFixture);
+    const tree = new Tree();
+    const d1 = await depositBase(o.entry, o.signers[0], tree);
+    const d2 = await depositBase(o.entry, o.signers[1], tree);
+    // réserves = 2 ETH ; plafond = max(20 % × 2 ETH, 1 palier = 1 ETH) = 1 ETH par fenêtre
+    const r1 = hre.ethers.Wallet.createRandom().address;
+    const r2 = hre.ethers.Wallet.createRandom().address;
+    const p1 = proveClaim({ note: d1.note, tree, index: 0, recipient: r1, relayer: hre.ethers.ZeroAddress, fee: 0n });
+    const p2 = proveClaim({ note: d2.note, tree, index: 1, recipient: r2, relayer: hre.ethers.ZeroAddress, fee: 0n });
+    await expect(o.entry.exit(0, p1.proof, tree.root(), hre.ethers.toBeHex(d1.note.nullifier, 32), r1, hre.ethers.ZeroAddress, 0n)).to.emit(o.entry, "ExitPaid");
+    await expect(o.entry.exit(0, p2.proof, tree.root(), hre.ethers.toBeHex(d2.note.nullifier, 32), r2, hre.ethers.ZeroAddress, 0n)).to.emit(o.entry, "ExitQueued");
+    expect(await hre.ethers.provider.getBalance(r2)).to.equal(STIPEND); // allocation seulement
+    expect(await o.entry.exitQueueLength()).to.equal(1n);
+    expect(await o.entry.processExitQueue.staticCall(5)).to.equal(0n); // même fenêtre : rien
+    await time.increase(24 * 3600);
+    await o.entry.connect(o.signers[7]).processExitQueue(5); // n'importe qui
+    expect(await hre.ethers.provider.getBalance(r2)).to.equal(STIPEND + BASE_CLASS.depositAmount);
+    expect(await o.entry.exitQueueLength()).to.equal(0n);
+  });
+
+  it("un destinataire hostile (réentrance, refus d'ETH) ne bloque pas la file : son dû devient une créance", async function () {
+    const o = await loadFixture(deployFixture);
+    const tree = new Tree();
+    const d = await depositBase(o.entry, o.signers[0], tree);
+    const hostile = await (await hre.ethers.getContractFactory("HostileReceiver")).deploy(await o.entry.getAddress());
+    const h = await hostile.getAddress();
+    const pr = proveClaim({ note: d.note, tree, index: 0, recipient: h, relayer: hre.ethers.ZeroAddress, fee: 0n });
+    await expect(o.entry.exit(0, pr.proof, tree.root(), hre.ethers.toBeHex(d.note.nullifier, 32), h, hre.ethers.ZeroAddress, 0n))
+      .to.emit(o.entry, "Owed");
+    expect(await o.entry.owed(0, h)).to.equal(STIPEND + BASE_CLASS.depositAmount);
+    expect(await hre.ethers.provider.getBalance(h)).to.equal(0n);
+  });
+
+  it("une note ne peut être que réclamée OU sortie, une seule fois (nullificateur commun)", async function () {
+    const o = await loadFixture(deployFixture);
+    const tree = new Tree();
+    const d = await depositBase(o.entry, o.signers[0], tree);
+    const r = hre.ethers.Wallet.createRandom().address;
+    const pr = proveClaim({ note: d.note, tree, index: 0, recipient: r, relayer: hre.ethers.ZeroAddress, fee: 0n });
+    const nf = hre.ethers.toBeHex(d.note.nullifier, 32);
+    await o.entry.exit(0, pr.proof, tree.root(), nf, r, hre.ethers.ZeroAddress, 0n);
+    await expect(o.entry.claim(0, pr.proof, tree.root(), nf, r, hre.ethers.ZeroAddress, 0n)).to.be.revertedWithCustomError(o.entry, "NullifierSpent");
+    await expect(o.entry.exit(0, pr.proof, tree.root(), nf, r, hre.ethers.ZeroAddress, 0n)).to.be.revertedWithCustomError(o.entry, "NullifierSpent");
   });
 });
