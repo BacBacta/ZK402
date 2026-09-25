@@ -1,0 +1,51 @@
+{
+  "date": "2026-09-25T12:46:38.580Z",
+  "rpc": "https://devnet.helius-rpc.com/?api-key=…",
+  "program": "DMBrPRJ7H5hPaJ14T5sVfKQavD71PrkmXFiRDh32S2V8",
+  "mint": "DBSYQfJeUGxNMk4PFCYfYqPnWJpuGW2ehWjQfYRA63j",
+  "pool": "8cekVxCVWY63EseERg1oqtkNcgbweXNqRcy8JgZu5LBr",
+  "vault": "3oq7LuipAVuknhCy7AfnKjr2M1fJVjjbS1QAKDyrrdV9",
+  "initialize": {
+    "ok": true,
+    "computeUnits": 28712
+  },
+  "deposits": [
+    {
+      "sig": "5pwYHKTLjZRBFtafdPFWNT9es3PmH4iFD3sAhrcr7FVSmDAijLwu7nf3oj47Qsqkt39JfcupwP2hcm6ur7haYMFc",
+      "ok": true,
+      "computeUnits": 26296
+    },
+    {
+      "sig": "3VJ6AoBB1Bz21wDD4ArQsUSNsdg7X4mGRsFMs6Ww8a1ENj8WpEvKSwSZW74PRoVDNZaj4XenRkoxUWapnYM8cxWJ",
+      "ok": true,
+      "computeUnits": 26287
+    }
+  ],
+  "rootMatches": true,
+  "vaultAfterDeposits": "2000000",
+  "proveMs": 663,
+  "unknownRoot": {
+    "rejected": true,
+    "error": "Program log: AnchorError thrown in src/lib.rs:246. Error Code: UnknownRoot. Error Number: 6002. Error Message: Racine inconnue du pool."
+  },
+  "recipientSwap": {
+    "rejected": true,
+    "error": "Program log: AnchorError thrown in src/lib.rs:247. Error Code: RecipientMismatch. Error Number: 6003. Error Message: Le destinataire payé n'est pas celui de la preuve."
+  },
+  "validSpend": {
+    "sig": "hY5sAG6Q3E62Hw1jyi4ewbqAUezZn4stiwzhse53w9cATsYb1q4UGYtBAmZL1oyCrUFiwwZTCP2b3494Qzij52y",
+    "ok": true,
+    "computeUnits": 364472,
+    "txBytes": 951,
+    "usedLookupTable": true,
+    "feeLamports": 5000,
+    "recipientBalance": "990000",
+    "vaultBalance": "1000000",
+    "relayerBalance": "8010000"
+  },
+  "doubleSpend": {
+    "rejected": true,
+    "error": "Program log: ProgramError occurred. Error Code: Custom(14201). Error Number: 14201. Error Message: Custom program error: 0x3779."
+  },
+  "totalLamportsSpentByScript": 23005804
+}

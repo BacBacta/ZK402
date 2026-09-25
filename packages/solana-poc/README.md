@@ -131,6 +131,22 @@ programme accepte tout jeton SPL classique.
 | Double dépense (rejeu) | ✅ refusée (Light 0x3779) |
 | Génération de la preuve (serveur) | ≈ 0,8 s |
 
+### Résultats sur Solana devnet (25 septembre 2026) — `results-pool-devnet.json`
+
+Programme `DMBrPRJ7H5hPaJ14T5sVfKQavD71PrkmXFiRDh32S2V8` (loyer ≈ 1,47 SOL), RPC Helius devnet.
+
+| Test | Devnet |
+|---|---|
+| `initialize` / `deposit` | ✅ 28 712 CU / ≈ 26 300 CU par dépôt |
+| Racine on-chain = racine hors chaîne | ✅ identique |
+| Racine inconnue | ✅ refusée (`UnknownRoot`) |
+| Destinataire substitué | ✅ refusé (`RecipientMismatch`) |
+| Dépense valide | ✅ **364 472 CU**, 951 o ; destinataire 0,99, relayeur +0,01, coffre 2 → 1 ([transaction](https://explorer.solana.com/tx/hY5sAG6Q3E62Hw1jyi4ewbqAUezZn4stiwzhse53w9cATsYb1q4UGYtBAmZL1oyCrUFiwwZTCP2b3494Qzij52y?cluster=devnet)) |
+| Double dépense | ✅ refusée (Light 0x3779) |
+
+Coût du script complet ≈ 0,023 SOL, surtout le loyer (unique) du jeton de test, des comptes de
+jetons, du compte `Pool` et de la table d'adresses ; une dépense seule reste ≈ 15 000 lamports.
+
 Taille du programme : 289 Ko (profil `opt-level = "z"`, LTO) → ≈ 1,47 SOL de loyer sur devnet.
 Piège rencontré : copier le compte `Pool` (2,4 Ko) sur la pile provoquait un accès mémoire
 invalide (pile de 4 Ko par appel) ; seuls les champs utiles sont lus.
