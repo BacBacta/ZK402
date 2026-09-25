@@ -96,6 +96,11 @@ async function start(pool: any, o: any, by?: any, pythUpdate: string[] = [], val
 async function settleAll(pool: any, by: any, step = 64) {
   let done = false;
   while (!done) {
+    // Apply attend le délai de grâce fixé à la fin de Fills.
+    if ((await pool.phase()) === 2n && BigInt(await time.latest()) < (await pool.applyNotBefore())) {
+      await expect(pool.connect(by).settleStep(step)).to.be.revertedWithCustomError(pool, "ApplyTooEarly");
+      await time.increaseTo(await pool.applyNotBefore());
+    }
     done = await pool.connect(by).settleStep.staticCall(step);
     await pool.connect(by).settleStep(step);
   }

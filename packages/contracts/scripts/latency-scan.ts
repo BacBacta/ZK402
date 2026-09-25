@@ -61,7 +61,7 @@ async function hintAt(t: bigint) {
 async function main() {
   const opKey = process.env.PRIVATE_KEY as `0x${string}`;
   const op = walletFor(opKey);
-  const log: Record<string, unknown> = { date: new Date().toISOString(), network: "base-sepolia", n: N, step: String(STEP), algorithm: process.env.HOLD_APPLY === "1" ? "deux vitesses, Apply retenu (contrôle)" : "deux vitesses (séquestre au plafond, Fills sans mul) + preuve unique" };
+  const log: Record<string, unknown> = { date: new Date().toISOString(), network: "base-sepolia", n: N, step: String(STEP), algorithm: process.env.HOLD_APPLY === "1" ? "deux vitesses, Apply retenu (contrôle)" : "deux vitesses + délai de grâce on-chain avant Apply + preuve unique" };
 
   // 1. Déploiement (mode démo), ou reprise sur un pool existant (RESUME_POOL) dont le lot est chargé.
   const resume = process.env.RESUME_POOL;
@@ -184,6 +184,12 @@ async function main() {
       console.log(`phase Fills seule : dernière exécution lue à ${Math.max(...(ready as number[])).toFixed(1)} s`);
     }
     steps++;
+    // Délai de grâce on-chain entre Fills et Apply (applyNotBefore).
+    if (Number(await read(pool, "phase")) === 2) {
+      if (tFillsMined === null) tFillsMined = now() - t0;
+      const nb = (await read(pool, "applyNotBefore")) as bigint;
+      while (((await pc.getBlock()).timestamp as bigint) < nb) await sleep(2000);
+    }
     const r = await send(op, pool, "settleStep", [STEP], 15_000_000n);
     gas.push(r.gasUsed);
     const settled = viem.parseEventLogs({ abi, logs: r.logs, eventName: "BatchSettled" }).length > 0;

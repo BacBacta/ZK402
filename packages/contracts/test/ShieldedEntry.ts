@@ -141,8 +141,10 @@ describe("ShieldedEntry — P1 : dépôt public, réclamation anonyme par preuve
     await time.increaseTo(deadline);
     const keeper = signers[12];
     await pool.connect(keeper).startSettlement(await cl.latest(), []);
+    // Phase Fills (tout le monde peut l'exécuter), délai de grâce, puis Apply ; le finisseur touche les frais
+    await pool.connect(signers[13]).settleStep(64);
+    await time.increaseTo(await pool.applyNotBefore());
     const before = await hre.ethers.provider.getBalance(keeper.address);
-    // un seul appel suffit désormais pour 2 ordres (Eff, scan, Fills) ; le finisseur touche les frais
     expect(await pool.connect(keeper).settleStep.staticCall(64)).to.equal(true);
     const fin = await (await pool.connect(keeper).settleStep(64)).wait();
     expect((await hre.ethers.provider.getBalance(keeper.address)) - before + fin!.gasUsed * fin!.gasPrice).to.equal(2n * SUBMIT_FEE);

@@ -124,6 +124,17 @@ contract SealedBatchPoolV2 {
     }
     Phase public phase;
     uint256 public cursor;
+    /// @notice Début au plus tôt de la phase Apply du lot en cours (fixé à la fin de Fills).
+    uint256 public applyNotBefore;
+    /// @dev Délai de grâce entre Fills et Apply : APPLY_GRACE_BASE + n / APPLY_GRACE_ORDERS_PER_S
+    ///      secondes, borné par APPLY_GRACE_MAX. Mesuré sur Base Sepolia : lancer Apply (2 mul
+    ///      64 bits par ordre) juste après Fills met ses multiplications en file devant les
+    ///      déchiffrements des exécutions (32 ordres : dernière exécution lisible à 35 s au lieu
+    ///      de 14,6 s). Le délai ne touche ni aux fonds ni à l'exactitude, seulement à l'ordre
+    ///      de traitement chez le coprocesseur.
+    uint256 public constant APPLY_GRACE_BASE = 6;
+    uint256 public constant APPLY_GRACE_ORDERS_PER_S = 2;
+    uint256 public constant APPLY_GRACE_MAX = 120;
     uint64 public settlementPrice;
     euint64 private _price;
     euint64 private _zero;
@@ -136,6 +147,7 @@ contract SealedBatchPoolV2 {
         uint256 indexed batchId, uint64 price, uint256 orders, int256 chainlink8, int256 pyth8, int256 api38
     );
     event BatchSettled(uint256 indexed batchId);
+    event FillsComputed(uint256 indexed batchId, uint256 applyNotBefore);
     event BatchSkippedEmpty(uint256 indexed batchId);
     event BatchPostponed(uint256 indexed batchId, uint8 reason);
     event Credited(address indexed account);
@@ -154,6 +166,7 @@ contract SealedBatchPoolV2 {
     error BatchNotClosed();
     error SettlementInProgress();
     error NoSettlementInProgress();
+    error ApplyTooEarly();
     error BadParams();
     error RefundFailed();
     error BadChainlinkHint();
@@ -576,26 +589,29 @@ contract SealedBatchPoolV2 {
     ///         puis phase Apply). N'importe qui peut l'appeler. Renvoie true quand le lot est réglé.
     function settleStep(uint256 maxItems) external returns (bool done) {
         if (phase == Phase.Idle) revert NoSettlementInProgress();
+        if (phase == Phase.Apply && block.timestamp < applyNotBefore) revert ApplyTooEarly();
         uint256 k = nextToSettle;
         Order[] storage orders = _orders[k];
         uint256 n = orders.length;
         uint256 budget = maxItems;
-        while (budget > 0) {
-            if (cursor == n) {
-                if (phase == Phase.Fills) {
-                    phase = Phase.Apply;
-                    cursor = 0;
-                    continue;
-                }
-                return _closeBatch(k);
-            }
+        while (budget > 0 && cursor < n) {
             if (phase == Phase.Fills) _fill(orders[cursor]);
             else _apply(orders[cursor]);
             cursor++;
             budget--;
         }
-        if (cursor == n && phase == Phase.Apply) return _closeBatch(k);
-        return false;
+        if (cursor < n) return false;
+        if (phase == Phase.Fills) {
+            // Exécutions calculées : Apply attend le délai de grâce (voir APPLY_GRACE_BASE).
+            phase = Phase.Apply;
+            cursor = 0;
+            uint256 grace = APPLY_GRACE_BASE + n / APPLY_GRACE_ORDERS_PER_S;
+            if (grace > APPLY_GRACE_MAX) grace = APPLY_GRACE_MAX;
+            applyNotBefore = block.timestamp + grace;
+            emit FillsComputed(k, applyNotBefore);
+            return false;
+        }
+        return _closeBatch(k);
     }
 
     function _closeBatch(uint256 k) internal returns (bool) {
