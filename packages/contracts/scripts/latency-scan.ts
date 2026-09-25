@@ -147,31 +147,43 @@ async function main() {
   }
   const t0 = now();
   const gas: bigint[] = [];
+  // Délai de lecture de chaque exécution, mesuré depuis le début du règlement et en parallèle
+  // (règlement à deux vitesses : l'exécution est lisible dès la phase Fills, avant Apply).
+  const ready: (number | null)[] = Array(N).fill(null);
+  const fills: string[] = Array(N).fill("");
+  let polling = true;
+  const poller = (async () => {
+    while (polling || (ready.some((x) => x === null) && now() - t0 < 1200)) {
+      await Promise.all(traders.map(async (w, i) => {
+        if (ready[i] !== null) return;
+        try {
+          const h = await read(pool, "lastFillOf", [w.account.address]);
+          if (BigInt(h as any) === 0n) return;
+          const v = await clients[i].decryptForView(h, FheTypes.Uint64).execute();
+          fills[i] = String(v);
+          ready[i] = now() - t0;
+        } catch { /* pas encore */ }
+      }));
+      if (!ready.some((x) => x === null)) break;
+      await sleep(2000);
+    }
+  })();
   const r0 = await send(op, pool, "startSettlement", [await hintAt(deadline), []], 1_500_000n);
   if (!viem.parseEventLogs({ abi, logs: r0.logs, eventName: "SettlementStarted" }).length) throw new Error("lot reporté (oracles)");
   gas.push(r0.gasUsed);
+  let tFillsMined: number | null = null;
   for (;;) {
     const r = await send(op, pool, "settleStep", [STEP], 15_000_000n);
     gas.push(r.gasUsed);
-    if (viem.parseEventLogs({ abi, logs: r.logs, eventName: "BatchSettled" }).length) break;
+    const settled = viem.parseEventLogs({ abi, logs: r.logs, eventName: "BatchSettled" }).length > 0;
+    if (tFillsMined === null && (settled || Number(await read(pool, "phase")) === 2)) tFillsMined = now() - t0;
+    if (settled) break;
   }
   const tSettled = now();
-  console.log(`réglé on-chain en ${(tSettled - t0).toFixed(1)} s, ${gas.length} tx`);
+  console.log(`réglé on-chain en ${(tSettled - t0).toFixed(1)} s, ${gas.length} tx (phase Fills minée à ${tFillsMined?.toFixed(1)} s)`);
+  polling = false;
+  await poller;
 
-  // 4. Délai de lecture de chaque exécution
-  const ready: (number | null)[] = Array(N).fill(null);
-  const fills: string[] = Array(N).fill("");
-  while (ready.some((x) => x === null) && now() - tSettled < 900) {
-    await Promise.all(traders.map(async (w, i) => {
-      if (ready[i] !== null) return;
-      try {
-        const v = await clients[i].decryptForView(await read(pool, "lastFillOf", [w.account.address]), FheTypes.Uint64).execute();
-        fills[i] = String(v);
-        ready[i] = now() - tSettled;
-      } catch { /* pas encore */ }
-    }));
-    if (ready.some((x) => x === null)) await sleep(2000);
-  }
   // Vérification : FIFO de référence
   const tb = qtys.reduce((s, q, i) => s + (sides[i] ? q : 0n), 0n);
   const tsum = qtys.reduce((s, q, i) => s + (sides[i] ? 0n : q), 0n);
@@ -184,11 +196,11 @@ async function main() {
   Object.assign(log, {
     encryptSecondsPerOrderAvg: encTimes.length ? encTimes.reduce((a, b) => a + b, 0) / encTimes.length : "voir exécution précédente",
     submitGasAvg: submitGas.length ? String(sum(submitGas) / BigInt(submitGas.length)) : "voir exécution précédente",
-    settleGasTotal: String(sum(gas)), settleTxs: gas.length, onchainSettleSeconds: tSettled - t0,
+    settleGasTotal: String(sum(gas)), settleTxs: gas.length, onchainSettleSeconds: tSettled - t0, fillsPhaseMinedSeconds: tFillsMined,
     decryptReadySeconds: { first: got[0] ?? null, median: q(0.5), p90: q(0.9), last: got[got.length - 1] ?? null, ready: got.length, of: N },
     fills, expected, correct: fills.every((f, i) => f === expected[i]),
   });
   console.log(JSON.stringify(log, null, 2));
-  fs.writeFileSync(path.join(__dirname, `../deployments/latency-scan-n${N}.json`), JSON.stringify(log, null, 2) + "\n");
+  fs.writeFileSync(path.join(__dirname, `../deployments/latency-twospeed-n${N}.json`), JSON.stringify(log, null, 2) + "\n");
 }
 main().catch((e) => { console.error(e); process.exit(1); });
