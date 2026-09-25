@@ -61,7 +61,7 @@ async function hintAt(t: bigint) {
 async function main() {
   const opKey = process.env.PRIVATE_KEY as `0x${string}`;
   const op = walletFor(opKey);
-  const log: Record<string, unknown> = { date: new Date().toISOString(), network: "base-sepolia", n: N, step: String(STEP), algorithm: "deux vitesses (séquestre au plafond, Fills sans mul) + preuve unique" };
+  const log: Record<string, unknown> = { date: new Date().toISOString(), network: "base-sepolia", n: N, step: String(STEP), algorithm: process.env.HOLD_APPLY === "1" ? "deux vitesses, Apply retenu (contrôle)" : "deux vitesses (séquestre au plafond, Fills sans mul) + preuve unique" };
 
   // 1. Déploiement (mode démo), ou reprise sur un pool existant (RESUME_POOL) dont le lot est chargé.
   const resume = process.env.RESUME_POOL;
@@ -172,7 +172,18 @@ async function main() {
   if (!viem.parseEventLogs({ abi, logs: r0.logs, eventName: "SettlementStarted" }).length) throw new Error("lot reporté (oracles)");
   gas.push(r0.gasUsed);
   let tFillsMined: number | null = null;
+  // HOLD_APPLY=1 (expérience de contrôle) : la phase Apply n'est lancée qu'une fois toutes les
+  // exécutions lues, pour isoler le coût de la phase Fills seule. Exige N multiple de STEP.
+  const hold = process.env.HOLD_APPLY === "1";
+  let steps = 0;
   for (;;) {
+    if (hold && steps === N / Number(STEP)) {
+      tFillsMined = now() - t0;
+      polling = false;
+      await poller;
+      console.log(`phase Fills seule : dernière exécution lue à ${Math.max(...(ready as number[])).toFixed(1)} s`);
+    }
+    steps++;
     const r = await send(op, pool, "settleStep", [STEP], 15_000_000n);
     gas.push(r.gasUsed);
     const settled = viem.parseEventLogs({ abi, logs: r.logs, eventName: "BatchSettled" }).length > 0;
@@ -201,6 +212,6 @@ async function main() {
     fills, expected, correct: fills.every((f, i) => f === expected[i]),
   });
   console.log(JSON.stringify(log, null, 2));
-  fs.writeFileSync(path.join(__dirname, `../deployments/latency-twospeed-n${N}.json`), JSON.stringify(log, null, 2) + "\n");
+  fs.writeFileSync(path.join(__dirname, `../deployments/latency-twospeed-n${N}${process.env.HOLD_APPLY === "1" ? "-hold" : ""}.json`), JSON.stringify(log, null, 2) + "\n");
 }
 main().catch((e) => { console.error(e); process.exit(1); });
