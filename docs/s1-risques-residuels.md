@@ -1,4 +1,4 @@
-# S1 — Mesures et risques résiduels (état au 25 septembre 2026, incréments 1 à 3)
+# S1 — Mesures et risques résiduels (état au 25 septembre 2026, incréments 1 à 4)
 
 > Livrables 5 et 6 du programme [`prompt-s1-points-ouverts.md`](prompt-s1-points-ouverts.md).
 > Modèle de menaces : [`s1-modele-menaces.md`](s1-modele-menaces.md). Spécification :
@@ -58,13 +58,27 @@ donc ΣQUOTE' = ΣQUOTE − p·Σfb + p·Σfs = ΣQUOTE, puisque Σfb = Σfs (pr
 | **Pool** | Crédit réservé à l'entrée ; faucet désactivé ; **frais d'ordre anti-spam** versés au finisseur du règlement (incitation au déclenchement) | Tests : `OnlyEntry`, `FaucetDisabled`, frais versés au déclencheur |
 | **Réseau réel (Base Sepolia)** | Entrée `0x29f94f7Cf9995e20D9b8EE6f60161A6CC26F0382`, pool `0xB4081D208C1CF2b3b43EfC9f71b542ef462C9DA4`, vérifieur `0x869768647eC68e5372874584eE7d806Ad267F610` | 2 dépôts, réclamation anonyme `0x03ecabe8…0bfd6` : preuve générée en 1,05 s, **4,08 M de gas** (≈ 0,07 $ au gas de Base mainnet), pseudonyme neuf crédité et financé par le contrat, nullificateur dépensé |
 
+## 1 quater. Ce que l'incrément 4 a livré (P4)
+
+| Élément | Livré | Preuve / mesure |
+|---|---|---|
+| **Conversion solde chiffré → note** | `requestNoteOut` / `finalizeNoteOut` ; allocation prélevée sur le solde chiffré | Tests : cycle complet, solde insuffisant (rien débité, rien inséré), faux résultat refusé (valeur inversée ; signature d'un autre chiffré), interdit pendant un règlement |
+| **Sortie anonyme en actif réel** | `exit` avec la même preuve ZK ; nullificateur commun avec `claim` | Tests : ETH reçu exact, une note ne se dépense qu'une fois |
+| **Disjoncteur + file** | Plafond par fenêtre de 24 h, file sans permission | Test : 2ᵉ sortie mise en file, payée après 24 h par un tiers |
+| **Paiement ou créance, anti-réentrance** | `_payOut`, `withdrawOwed`, `nonReentrant` | Test : contrat hostile (réentrance + refus d'ETH), créance inscrite, file non bloquée |
+| **Solvabilité** | Invariant ETH = réserves + allocations des notes non dépensées | Test |
+| **Réseau réel (Base Sepolia)** | Entrée `0xCf015Cb62A0AbFe77c4D65a32205ECeE270c02C3`, pool `0x1491FD248AE4F437040B3A48fBffDa947f5f241B` | 3 dépôts → 2 réclamations anonymes → conversion (569 k gas) → **déchiffrement Teecryptor en 3,9 s** → note insérée → **sortie anonyme** (3,94 M gas) : l'adresse neuve reçoit **0,0012 ETH, au wei près** ; réserves conformes (0,0018 ETH) |
+
 ## 2. Risques résiduels (ce qui n'est PAS résolu)
 
 | # | Risque | Pourquoi ce n'est pas résolu | Borne actuelle | Condition de réouverture / plan |
 |---|---|---|---|---|
 | R1 | **Déchiffreur unique (Teecryptor, un seul TEE Intel TDX)** : s'il est compromis, tous les ordres sont lisibles | Hors de portée de tout protocole construit sur CoFHE : le déchiffreur détient la clé complète | Aucune borne cryptographique sur la confidentialité. **Fonds** : aucun chemin v2 ne dépend d'un clair signé | Migrer vers le réseau de seuil de Fhenix dès qu'il fournit des preuves de déchiffrement correct vérifiables. Réévaluer Zama (seuil MPC) comme alternative |
 | R2 | **Métadonnées** | **Largement traité (incrément 3)** : identité du déposant ↔ pseudonyme non associables (ensemble d'anonymat = notes de la classe) | Restent visibles : pseudonyme persistant (L1, L2), moment (L3), nombre d'ordres (L4) | Rotation de pseudonyme via retrait et redépôt (P4) ; remplissage des lots si les données le justifient |
-| R15 | **Pas de retrait** : les fonds déposés dans l'entrée ne peuvent pas encore ressortir | P4 non implémenté | **Testnet uniquement** | Incrément 4 : retraits en deux temps + disjoncteur (spécification § P2.b) |
+| R15 | ~~Pas de retrait~~ **Traité (incrément 4)** : sortie anonyme par preuve ZK, disjoncteur, file, créances | — | — | — |
+| R18 | **Déchiffreur compromis → notes non adossées** | Non détectable on-chain (seul Teecryptor déchiffre) | **Débit borné** par le disjoncteur : max(20 % des réserves, un palier) par 24 h | Preuves de déchiffrement correct (réseau de seuil Fhenix) ; réduire `maxOutflowBps` selon le risque accepté |
+| R19 | **Le résultat « ok » d'une conversion est public** : on apprend si le pseudonyme avait au moins palier + allocation | Inhérent : la décision d'insérer la note est publique | 1 bit par conversion | Choisir ses paliers ; ne convertir que ce qu'on détient |
+| R20 | **Pas encore d'audit externe** ni de vérification formelle de l'entrée (arbre, disjoncteur) | — | 14 tests ciblés, revue adversariale interne (3 failles trouvées et corrigées) | Audit externe avant tout déploiement mainnet ; invariants Halmos sur `_reserveCapacity` |
 | R16 | **Petit ensemble d'anonymat** au démarrage | Peu de dépôts | 1/|S| | Paliers peu nombreux ; délai conseillé entre dépôt et réclamation |
 | R17 | **IP de l'utilisateur** visible par le relayeur ou le nœud RPC | Hors protocole | — | Tor ou relais réseau (hors périmètre on-chain) |
 | R3 | **Le moment de soumission** est visible | **Inhérent** à une chaîne publique | Avec une allocation au prorata (P3), ce moment n'a plus d'effet économique | Incrément 3 (P3) |
@@ -72,7 +86,7 @@ donc ΣQUOTE' = ΣQUOTE − p·Σfb + p·Σfs = ΣQUOTE, puisque Σfb = Σfs (pr
 | R5 | ~~Choix du moment de déclenchement~~ | **Résolu (incrément 2)** : prix évalué à t_k | Résidu R5′ : le déclencheur peut influer sur la validité d'API3 ou de Pyth-stocké → **≤ 0,5 %** du prix | Supprimable avec un historique on-chain pour API3 ou avec des mises à jour Pyth datées |
 | R6 | **Censure par le séquenceur de Base** ≤ 12 h | Inhérent à Base (séquenceur centralisé, inclusion forcée L1) | Pas de perte : les ordres restent dans leur lot | Documenté ; aucune échéance dure côté trader |
 | R7 | **Latence qui croît avec la taille du lot** (≈ 1,5 s par ordre, FIFO séquentiel) | P3 non traité | 39,8 s pour 16 ordres (mesuré) | Incrément 3 : allocation parallèle |
-| R8 | **Crédits de démo**, pas d'actifs réels ; frais CoFHE mainnet inconnus | P4 non traité | — | Incrément 4 : FHERC20 ou ERC-7984 (brouillon), retraits en deux temps + disjoncteur |
+| R8 | ~~Crédits de démo~~ **Traité (incrément 4)** : ETH natif et jeton ERC-20 réels, avec entrées et sorties | Frais CoFHE mainnet toujours inconnus | — | Demander les frais à Fhenix ; tester l'USDC réel de Base Sepolia (`0x036C…CF7e`, faucet Circle) |
 | R9 | **Liquidité** | P5 non traité | — | Incrément 5 : simulation sur les flux des agents de Base |
 | R10 | **Conformité** | P6 non traité | — | Incrément 6 : preuves ZK côté utilisateur, sans clé tierce |
 | R11 | ~~Parasitage de lot~~ | **Traité (incrément 3)** : chaque ordre exige un compte crédité par une note (dépôt réel) **et** des frais d'ordre | Coût d'une place = palier minimal immobilisé + frais | Calibrer les frais sur mainnet |

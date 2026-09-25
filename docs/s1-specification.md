@@ -280,3 +280,51 @@ refusées).
   factices. Son intérêt est limité tant que les participants sont déjà pseudonymes.
 - **Moment (L3)** : inhérent.
 - **Réseau** : l'IP n'est pas protégée par le protocole (utiliser Tor ou un relais réseau).
+
+---
+
+## P4 — Actifs réels et sorties sécurisées (incrément 4)
+
+### Mécanisme
+
+| Étape | Fonction | Ce qui se passe | Confiance |
+|---|---|---|---|
+| 1. Conversion | `pool.requestNoteOut(cls, C)` (par le pseudonyme P) | Circuit constant : `ok = BASE ≥ s + d` (palier BASE) ou `QUOTE ≥ d ∧ BASE ≥ s` (palier QUOTE) ; débits `select(ok, …, 0)` ; `ok` rendu déchiffrable publiquement. L'**allocation de gas** de la future note (s unités BASE) est prélevée sur le solde chiffré : **aucun ETH extérieur**, donc aucun lien avec une autre adresse | Interdit pendant un règlement (protection de la couverture) |
+| 2. Finalisation | `pool.finalizeNoteOut(id, ok, signature)` (n'importe qui) | Vérifie la signature du déchiffreur (`verifyDecryptResultSafe`), puis insère la note (`entry.insertFromPool`) si ok | **Teecryptor (H2)** |
+| 3a. Rotation | `entry.claim` | La note est réclamée vers un NOUVEAU pseudonyme | ZK |
+| 3b. Sortie | `entry.exit` | Même preuve ZK : l'actif réel part vers **n'importe quelle** adresse, sans révéler quelle note | ZK |
+| 4. Disjoncteur | `_reserveCapacity` / `processExitQueue` | Sorties plafonnées par fenêtre de 24 h à max(`maxOutflowBps` × réserves, un palier) ; au-delà, **file d'attente**, payée sans permission à la fenêtre suivante | Règle publique, sans humain |
+| 5. Paiement ou créance | `_payOut` / `withdrawOwed` | Gas plafonné (50 000) ; si le destinataire refuse (contrat hostile, liste noire USDC), le montant devient une créance récupérable. **La file ne peut pas être bloquée** | — |
+
+### Invariant de solvabilité (testé)
+
+`ETH détenu par l'entrée = réserves[ETH] + stipend × (notes non dépensées)`.
+- Un dépôt ajoute palier + stipend.
+- Une réclamation verse le stipend.
+- Une note créée par le pool transfère s de `réserves` vers la garantie des allocations.
+- Une sortie verse palier + stipend.
+
+### Borne en cas de compromission du déchiffreur (P2.b réalisé)
+
+Un Teecryptor malveillant peut signer `ok = vrai` pour un solde insuffisant, et créer ainsi une
+note non adossée. Ce qu'il peut en tirer est borné par le disjoncteur : au plus
+**max(maxOutflowBps × réserves, un palier) par fenêtre de 24 h** et par actif. Avant l'incrément 4,
+il n'y avait pas de chemin de sortie ; sans disjoncteur, la perte possible aurait été de 100 %.
+
+**Limite déclarée** : la compromission elle-même n'est **pas détectable** on-chain, puisque
+personne d'autre ne peut déchiffrer. Le disjoncteur borne donc le **débit** de la fuite, pas son
+existence. L'éliminer exige des preuves de déchiffrement correct (réseau de seuil Fhenix à venir,
+ou déchiffrement vérifiable).
+
+### Failles trouvées et corrigées pendant l'incrément (revue adversariale)
+
+1. **Réentrance dans `processExitQueue`** : le paiement partait avant l'avancement de la file, ce
+   qui permettait un double paiement. **Corrigé** : réservation de capacité, puis avancement de la
+   file, puis paiement, avec un verrou de réentrance sur toutes les fonctions qui transfèrent de la
+   valeur.
+2. **Blocage de la file par un destinataire hostile** : un paiement qui échoue bloquait toute la
+   file. **Corrigé** : paiement ou créance, gas plafonné (test avec un contrat qui tente une
+   réentrance puis refuse l'ETH).
+3. **Lien par le financement du gas** : la première conception exigeait que le pseudonyme verse
+   l'allocation en ETH, et donc qu'il reçoive de l'ETH de l'extérieur. **Corrigé** : allocation
+   débitée du solde chiffré en BASE.

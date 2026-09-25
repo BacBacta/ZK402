@@ -1,0 +1,19 @@
+{
+  "date": "2026-09-25T02:58:48.838Z",
+  "poseidonT3": "0x5285F16c18d710c24515640d34becA5Fd3a475CB",
+  "zkTranscriptLib": "0xD0A07aE982E6D739f8E0c675174033b662b3D64B",
+  "honkVerifier": "0x8EC18345ef69636663bf7b33447E20F626664eE7",
+  "pool": "0x1491FD248AE4F437040B3A48fBffDa947f5f241B",
+  "entry": "0xCf015Cb62A0AbFe77c4D65a32205ECeE270c02C3",
+  "pseudonym": "0xFE329F8D93ED9c3259CFe4580a467493b2b7002A",
+  "requestNoteOutGas": "569460",
+  "decryptSeconds": 3.855,
+  "okDecrypted": "1",
+  "noteInserted": true,
+  "exitTx": "0x3ad7874afc3714c25386695cf29fb9a4566aaf4587a200c16990e467195f8396",
+  "exitGas": "3936755",
+  "destination": "0xD93a123Ca2479364Bc8299872000d3F8199749f7",
+  "destinationEth": "0.0012",
+  "expectedEth": "0.0012",
+  "reservesBase": "1800000000000000"
+}
