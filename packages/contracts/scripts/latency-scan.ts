@@ -61,7 +61,7 @@ async function hintAt(t: bigint) {
 async function main() {
   const opKey = process.env.PRIVATE_KEY as `0x${string}`;
   const op = walletFor(opKey);
-  const log: Record<string, unknown> = { date: new Date().toISOString(), network: "base-sepolia", n: N, step: String(STEP), algorithm: "scan Blelloch + preuve unique" };
+  const log: Record<string, unknown> = { date: new Date().toISOString(), network: "base-sepolia", n: N, step: String(STEP), algorithm: "deux vitesses (séquestre au plafond, Fills sans mul) + preuve unique" };
 
   // 1. Déploiement (mode démo), ou reprise sur un pool existant (RESUME_POOL) dont le lot est chargé.
   const resume = process.env.RESUME_POOL;
