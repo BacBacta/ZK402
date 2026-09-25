@@ -4,6 +4,7 @@
   "description": "Test de faisabilité : preuve de réclamation Noir → Groth16 (Sunspot) vérifiée sur Solana",
   "dependencies": {
     "@lightprotocol/stateless.js": "^0.23.3",
+    "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.4"
   }
 }

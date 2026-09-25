@@ -1,3 +1,5 @@
 target/ClaimVerifier.sol
 target/*.gz
 Prover_*.toml
+Prover_pool.toml
+target/pool/
