@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-25T14:34:12.761Z",
+  "rpc": "https://devnet.helius-rpc.com/?api-key=…",
+  "program": "H9YGaz5zPS1LXAjhDFnpj88UQGYbDoy64UQJtXBVnzno",
+  "bobAddress": "zk402:0412327f67bf171051119296937c8bb195d6b4da215b89b0d9f0261fca318b87fa49d0d66e494f85dca72dcb609352a0b59f5971b8ad7dfb781e5190b562ac3e",
+  "transfer": {
+    "status": 200,
+    "error": null,
+    "sig": "hHdkpmi716DjH8CATjypLqDFwvijJVXYfS84uF4He4MCHJdA2wb4cJ46GShXxQAb3Mjfk6uKsHrcMS6QWgpRToV",
+    "txBytes": 1202,
+    "memoBytes": 56,
+    "proveMs": 1959,
+    "computeUnits": 734983,
+    "fee": 5000
+  },
+  "afterTransfer": {
+    "alice": "695000",
+    "bob": "300000",
+    "carol": "0",
+    "bobReceived": [
+      "300000"
+    ]
+  },
+  "aliceSpendsBobNote": "impossible : note absente de l'arbre",
+  "lyingMemo": {
+    "status": 200,
+    "bobBalance": "300000",
+    "rejectedMemos": 1
+  },
+  "bobPays": {
+    "status": 200,
+    "error": null,
+    "sig": "5pqa2AkyZh6su6VgEBCDrRx1d1hSMaNuGv7xc7xKKx5YwkzN9v8uP68rNMFue64DpL4KVFdqGrXTxZuDNMyYcmNp",
+    "change": "195000",
+    "computeUnits": 735279,
+    "fee": 5000
+  },
+  "final": {
+    "alicePrivate": "680000",
+    "bobPrivate": "195000",
+    "carolPrivate": "0",
+    "seller": "100000",
+    "relayer": "15000",
+    "vault": "3385000"
+  },
+  "expected": {
+    "alicePrivate": "680000",
+    "bobPrivate": "195000",
+    "carolPrivate": "0",
+    "seller": "100000",
+    "relayer": "15000",
+    "vault": "3385000"
+  }
+}

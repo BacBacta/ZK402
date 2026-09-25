@@ -1,6 +1,9 @@
 //! Pool blindé JOIN-SPLIT sur Solana (montants libres, rendu de monnaie) — test, NON audité.
 //!
-//! Note : C = H(H(nk, secret), montant) ; nullificateur = H(nk, C).
+//! Note : C = H(H(pk, blinding), montant), pk = H(sk, 0) ; nullificateur = H(sk, C).
+//! `transact` publie aussi un message chiffré (≤ MAX_MEMO octets) dans l'événement
+//! `Transacted` : la note de sortie chiffrée pour son destinataire. Le programme ne peut pas
+//! vérifier ce chiffré ; le destinataire, lui, recalcule l'engagement après déchiffrement.
 //! - `initialize` : pool pour un jeton SPL (coffre = compte de jetons du PDA du pool).
 //! - `deposit(inner, montant)` : transfère `montant` vers le coffre et insère
 //!   C = H(inner, montant) calculé ON-CHAIN (le montant de la note est donc celui déposé).
@@ -37,6 +40,7 @@ pub const LIGHT_CPI_SIGNER: CpiSigner =
 pub const NULLIFIER_PREFIX: &[u8] = b"nullifier";
 pub const DEPTH: usize = 20;
 pub const ROOT_HISTORY: usize = 30;
+pub const MAX_MEMO: usize = 128;
 pub const TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
 const NR_INPUTS: usize = generated_vk::VK.nr_pubinputs;
@@ -81,6 +85,8 @@ pub enum PoolError {
     Poseidon,
     #[msg("Compte de jetons invalide")]
     BadTokenAccount,
+    #[msg("Message chiffré trop long")]
+    MemoTooLong,
 }
 
 #[account(zero_copy)]
@@ -152,6 +158,7 @@ pub struct Transacted {
     pub first_leaf_index: u32,
     pub withdraw: u64,
     pub fee: u64,
+    pub memo: Vec<u8>,
 }
 
 fn h(a: &[u8; 32], b: &[u8; 32]) -> Result<[u8; 32]> {
@@ -240,8 +247,10 @@ pub mod jspool {
         groth16_proof: Vec<u8>,
         public_witness: Vec<u8>,
         light: LightData,
+        memo: Vec<u8>,
     ) -> Result<()> {
         require!(public_witness.len() == PW_HEADER + NR_INPUTS * 32, PoolError::BadWitness);
+        require!(memo.len() <= MAX_MEMO, PoolError::MemoTooLong);
         let (known_root, mint, bump) = {
             let p = ctx.accounts.pool.load()?;
             (p.is_known_root(&input(&public_witness, IN_ROOT)), p.mint, p.bump)
@@ -305,7 +314,7 @@ pub mod jspool {
             invoke_signed(&transfer_ix(vault.key, ctx.accounts.relayer_token.key, &pool_key, fee),
                 &[vault.clone(), ctx.accounts.relayer_token.to_account_info(), pool_ai.clone()], signer_seeds)?;
         }
-        emit!(Transacted { nullifiers: nulls, commitments: outs, first_leaf_index, withdraw, fee });
+        emit!(Transacted { nullifiers: nulls, commitments: outs, first_leaf_index, withdraw, fee, memo });
         Ok(())
     }
 }

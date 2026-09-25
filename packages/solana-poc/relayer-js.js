@@ -1,6 +1,6 @@
 // Facilitateur / relayeur pour le pool JOIN-SPLIT (jspool). Même interface que relayer.js :
 // prepare(body, expect) (contrôles + simulation, rien n'est payé) et relay(body, expect).
-// body = { proof, publicWitness, recipientOwner } — aucune signature, aucun SOL côté agent.
+// body = { proof, publicWitness, recipientOwner, memo? } (memo = note chiffrée pour son destinataire) — aucune signature, aucun SOL côté agent.
 // Contrôles : la preuve désigne CE relayeur ; frais prouvés ≥ minimum ; destinataire prouvé =
 // compte de jetons (ATA) de recipientOwner ; si x402 (`expect`) : paiement public = EXACTEMENT
 // le prix et destinataire = payTo ; preuve de non-existence des 2 nullificateurs ; simulation.
@@ -53,8 +53,10 @@ function createJoinSplitRelayer({ rpc, local, keypair, programId, mint, pool, va
     lut = (await rpc.getAddressLookupTable(addr)).value;
   }
 
-  async function prepare({ proof, publicWitness, recipientOwner }, expect) {
+  async function prepare({ proof, publicWitness, recipientOwner, memo }, expect) {
     const pr = Buffer.from(proof, "base64"), pw = Buffer.from(publicWitness, "base64");
+    const mm = memo ? Buffer.from(memo, "base64") : Buffer.alloc(0);
+    if (mm.length > 128) return { status: 400, error: "message chiffré trop long" };
     if (pw.length !== PW_HEADER + NR_INPUTS * 32) return { status: 400, error: "témoin public mal formé" };
     if (pr.length > 1024) return { status: 400, error: "preuve trop longue" };
     let owner;
@@ -75,7 +77,7 @@ function createJoinSplitRelayer({ rpc, local, keypair, programId, mint, pool, va
     // ferait dépasser 1 232 octets (mesuré : 1 251). Le vendeur le crée une fois pour toutes.
     if (!(await rpc.getAccountInfo(recipientToken))) return { status: 400, error: "compte de jetons du destinataire inexistant" };
     const ixs = [web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 })];
-    ixs.push(new web3.TransactionInstruction({ programId, data: Buffer.concat([disc("transact"), u32(pr.length), pr, u32(pw.length), pw, light.data]), keys: [
+    ixs.push(new web3.TransactionInstruction({ programId, data: Buffer.concat([disc("transact"), u32(pr.length), pr, u32(pw.length), pw, light.data, u32(mm.length), mm]), keys: [
       { pubkey: keypair.publicKey, isSigner: true, isWritable: true }, { pubkey: pool, isSigner: false, isWritable: true },
       { pubkey: vault, isSigner: false, isWritable: true }, { pubkey: recipientToken, isSigner: false, isWritable: true },
       { pubkey: relayerToken, isSigner: false, isWritable: true }, { pubkey: spl.TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },

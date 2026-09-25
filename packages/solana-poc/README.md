@@ -267,8 +267,6 @@ Dépôts : 1,00 (autre utilisateur), **A = 1,00** et **B = 0,50** (agent), 2,00 
   fixe : 9 entrées publiques, l'engagement BSB22, 2 nullificateurs, 2 insertions dans l'arbre.
 
 **Reste à faire**
-- **Remise des notes de sortie à leur destinataire** : il faut chiffrer `(nk, secret, montant)`
-  pour lui ; aujourd'hui seul le créateur de la note la connaît.
 
 ## x402 au prix exact avec le join-split — `relayer-js.js`, `shielded-wallet.js`, `x402-js-test.js`
 
@@ -303,6 +301,43 @@ L'agent dépose **1,00** une seule fois ; d'autres utilisateurs déposent 2,00 e
 | Soldes | A **0,137**, B **0,042**, facilitateur **0,010**, coffre **3,511**, solde privé agent **0,811**, jetons publics de l'agent **0** : tous égaux aux attendus |
 | Portefeuille de l'agent dans les paiements | ✅ absent |
 | Coût par paiement | ≈ 736 700 CU ; 5 000 lamports de frais + ≈ 20 000 pour 2 nullificateurs |
+
+## Remise des notes : adresses privées et notes chiffrées — `notes-test.js`
+
+**Notes v2 avec propriétaire** (circuit et programme `jspool` mis à jour sur devnet) :
+- chaque portefeuille a une clé de dépense secrète `sk`, une clé publique `pk = H(sk, 0)` et
+  une paire X25519 de réception ; adresse privée `zk402:` + hex(pk) + hex(clé X25519) ;
+- note : `C = H(H(pk, blinding), montant)` ; nullificateur : `H(sk, C)`. Seul le détenteur de
+  `sk` peut dépenser. L'émetteur d'une note pour autrui ne peut **ni la dépenser, ni savoir
+  quand elle est dépensée**. Test Noir `test_sender_cannot_spend_recipient_note` ✅ ;
+- `transact` publie un message chiffré (≤ 128 o) dans l'événement `Transacted`.
+
+**Chiffrement** : clé éphémère X25519, HKDF-SHA256, ChaCha20-Poly1305. Le `blinding` n'est
+pas transmis : les deux parties le dérivent du secret partagé. Seul le montant est chiffré,
+d'où un message de **56 octets**. Avec 87 octets (blinding transmis), la transaction faisait
+1 233 o, **un octet au-dessus** de la limite de 1 232.
+
+**Réception** : le portefeuille parcourt les événements du pool et essaie de déchiffrer chaque
+message. Une note n'est acceptée que si l'engagement recalculé est **celui publié dans la
+même transaction**, donc présent dans l'arbre. Le destinataire n'a pas à croire l'émetteur.
+
+### Résultats sur Solana devnet (25 septembre 2026) — `results-notes-devnet.json`
+
+| Étape | Résultat |
+|---|---|
+| Alice → Bob **0,30 en note privée** (aucun montant public) | ✅ [transaction](https://explorer.solana.com/tx/hHdkpmi716DjH8CATjypLqDFwvijJVXYfS84uF4He4MCHJdA2wb4cJ46GShXxQAb3Mjfk6uKsHrcMS6QWgpRToV?cluster=devnet) : **1 202 o** (message 56 o), 734 983 CU, preuve ≈ 2 s |
+| Synchronisations | Bob trouve **0,30** ; Alice garde **0,695** de monnaie ; Carol (observatrice) : **0** |
+| Alice tente de dépenser la note de Bob | ✅ impossible (« note absente de l'arbre » : mauvaise clé) |
+| Message mensonger (note réelle de 0,01, message annonçant 5,00) | ✅ Bob l'**écarte** (engagement recalculé ≠ engagement publié) |
+| Bob dépense la note reçue : 0,10 payé au vendeur au prix exact | ✅ [transaction](https://explorer.solana.com/tx/5pqa2AkyZh6su6VgEBCDrRx1d1hSMaNuGv7xc7xKKx5YwkzN9v8uP68rNMFue64DpL4KVFdqGrXTxZuDNMyYcmNp?cluster=devnet) |
+| Soldes finaux | Alice **0,680**, Bob **0,195**, Carol 0, vendeur 0,10, relayeur 0,015, coffre 3,385 : **tous égaux aux attendus** |
+
+Bob n'a jamais eu de SOL ni de compte on-chain avant de dépenser : il a reçu, détecté et
+dépensé sa note uniquement via le relayeur. Le test x402 au prix exact
+(`x402-js-test.js`) repasse à l'identique avec les notes v2.
+
+Remarque : `joinsplit-test.js` et `results-joinsplit-devnet.json` utilisent le format de notes
+v1 (`H(H(nk, secret), montant)`) ; le programme `jspool` de devnet est désormais en v2.
 
 ## Faille trouvée et corrigée : entrées publiques non liées en Groth16
 
